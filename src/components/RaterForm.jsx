@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 
-function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluees }) {
+function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluees, raterType }) {
   const [scores, setScores] = useState(
     competencies.reduce((acc, comp) => ({ ...acc, [comp.id]: 3 }), {})
   );
   const [strength, setStrength] = useState('');
   const [improvement, setImprovement] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleScoreChange = (compId, value) => {
     setScores({ ...scores, [compId]: parseInt(value) || 3 });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!strength.trim() || !improvement.trim()) {
@@ -20,10 +23,24 @@ function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluee
       return;
     }
 
-    onSubmit({
-      competencyScores: scores,
-      openQuestions: { strength, improvement }
-    });
+    setSubmitting(true);
+    setError('');
+
+    try {
+      await addDoc(collection(db, 'feedback'), {
+        evalueeId: evaluee.id,
+        evalueeName: evaluee.name,
+        raterType: raterType || 'unknown',
+        competencyScores: scores,
+        openQuestions: { strength, improvement },
+        submittedAt: serverTimestamp(),
+      });
+
+      onSubmit({ competencyScores: scores, openQuestions: { strength, improvement } });
+    } catch (err) {
+      setError('Ошибка сохранения: ' + err.message);
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -81,8 +98,8 @@ function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluee
 
           {error && <div className="error-message">{error}</div>}
 
-          <button type="submit" className="btn btn-success">
-            Завершить
+          <button type="submit" className="btn btn-success" disabled={submitting}>
+            {submitting ? 'Сохранение...' : 'Завершить'}
           </button>
         </form>
       </div>

@@ -180,6 +180,7 @@ function App() {
             roleAssignments={roleAssignments}
             submittedFeedback={submittedFeedback}
             onStartOver={handleStartOver}
+            competencies={EMPLOYEE_COMPETENCIES}
           />
         )}
       </main>
