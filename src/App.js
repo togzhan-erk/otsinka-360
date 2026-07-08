@@ -6,6 +6,8 @@ import ThankYouScreen from './components/ThankYouScreen';
 import AdminUpload from './components/AdminUpload';
 import RoleAssignment from './components/RoleAssignment';
 import AdminDashboard from './components/AdminDashboard';
+import { db } from './firebase';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 const EMPLOYEE_COMPETENCIES = [
   { id: 1, name: 'Коммуникация', question: 'Ясно выражает свои идеи и активно слушает других' },
@@ -23,14 +25,6 @@ const RELATIONSHIP_TYPES = [
   { value: 'subordinate', label: 'Подчиненный', description: 'Он мой прямой подчиненный', icon: '👤' }
 ];
 
-const AVAILABLE_EMPLOYEES = [
-  'Иван Петров',
-  'Мария Сидорова',
-  'Сергей Кузнецов',
-  'Александра Волкова',
-  'Николай Соколов'
-];
-
 function App() {
   const [userRole, setUserRole] = useState(null);
   const [stage, setStage] = useState('roleSelector');
@@ -45,9 +39,26 @@ function App() {
     setStage('selectEvaluee');
   };
 
-  const handleSelectAdminRole = () => {
+  // При входе HR-директора — сразу проверяем Firestore на активный проект
+  const handleSelectAdminRole = async () => {
     setUserRole('admin');
-    setStage('adminUpload');
+    setStage('checkingProject');
+    try {
+      const snap = await getDoc(doc(db, 'projects', 'active'));
+      if (snap.exists()) {
+        const data = snap.data();
+        console.log('[App] Found existing project in Firestore:', data);
+        setEmployees(data.employees || []);
+        setRoleAssignments(data.roleAssignments || []);
+        setStage('adminDashboard');
+      } else {
+        console.log('[App] No existing project, starting fresh');
+        setStage('adminUpload');
+      }
+    } catch (err) {
+      console.error('[App] Error checking project:', err);
+      setStage('adminUpload');
+    }
   };
 
   const handleSelectEvaluee = (name) => {
@@ -70,9 +81,37 @@ function App() {
     setStage('roleAssignment');
   };
 
-  const handleRoleAssignmentComplete = (assignments) => {
+  // Сохраняем проект в Firestore при завершении RoleAssignment
+  const handleRoleAssignmentComplete = async (assignments) => {
     setRoleAssignments(assignments);
+    try {
+      await setDoc(doc(db, 'projects', 'active'), {
+        employees,
+        roleAssignments: assignments,
+        savedAt: serverTimestamp(),
+      });
+      console.log('[App] Project saved to Firestore');
+    } catch (err) {
+      console.error('[App] Failed to save project:', err);
+    }
     setStage('adminDashboard');
+  };
+
+  // "Начать новый проект" — удаляет активный проект из Firestore
+  const handleNewProject = async () => {
+    try {
+      await deleteDoc(doc(db, 'projects', 'active'));
+      console.log('[App] Active project deleted');
+    } catch (err) {
+      console.error('[App] Failed to delete project:', err);
+    }
+    setUserRole(null);
+    setStage('roleSelector');
+    setCurrentEvaluee(null);
+    setCurrentRaterType(null);
+    setEmployees([]);
+    setRoleAssignments([]);
+    setSubmittedFeedback([]);
   };
 
   const handleStartOver = () => {
@@ -94,10 +133,18 @@ function App() {
 
       <main className="app-main">
         {stage === 'roleSelector' && (
-          <RoleSelector 
+          <RoleSelector
             onSelectRater={handleSelectRaterRole}
             onSelectAdmin={handleSelectAdminRole}
           />
+        )}
+
+        {userRole === 'admin' && stage === 'checkingProject' && (
+          <div className="container">
+            <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+              <p style={{ color: '#6f6f77', fontSize: '1.1rem' }}>Загрузка проекта...</p>
+            </div>
+          </div>
         )}
 
         {userRole === 'rater' && stage === 'selectEvaluee' && (
@@ -105,9 +152,8 @@ function App() {
             <div className="card">
               <h2>Выберите оцениваемого</h2>
               <p className="subtitle">Кого вы будете оценивать?</p>
-              
-              <SelectEvalueeForm 
-                employees={AVAILABLE_EMPLOYEES}
+              <SelectEvalueeForm
+                employees={employees.length > 0 ? employees.map(e => e.name) : []}
                 onSelect={handleSelectEvaluee}
               />
             </div>
@@ -119,7 +165,7 @@ function App() {
             <div className="card">
               <h2>Выберите тип отношения</h2>
               <p className="subtitle">Какой тип отношения у вас с {currentEvaluee}?</p>
-              
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginTop: '2rem' }}>
                 {RELATIONSHIP_TYPES.map(type => (
                   <button
@@ -135,9 +181,7 @@ function App() {
                       transition: 'all 0.2s'
                     }}
                   >
-                    <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>
-                      {type.icon}
-                    </div>
+                    <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{type.icon}</div>
                     <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>{type.label}</div>
                     <div style={{ fontSize: '0.9rem', color: '#6f6f77' }}>{type.description}</div>
                   </button>
@@ -149,7 +193,7 @@ function App() {
 
         {userRole === 'rater' && stage === 'raterForm' && currentEvaluee && (
           <RaterForm
-            evaluee={{ id: 1, name: currentEvaluee }}
+            evaluee={{ id: currentEvaluee, name: currentEvaluee }}
             competencies={EMPLOYEE_COMPETENCIES}
             employeeType="employee"
             onSubmit={handleRaterSubmitFeedback}
@@ -180,6 +224,7 @@ function App() {
             roleAssignments={roleAssignments}
             submittedFeedback={submittedFeedback}
             onStartOver={handleStartOver}
+            onNewProject={handleNewProject}
             competencies={EMPLOYEE_COMPETENCIES}
           />
         )}
@@ -193,9 +238,7 @@ function SelectEvalueeForm({ employees, onSelect }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (selectedName) {
-      onSelect(selectedName);
-    }
+    if (selectedName) onSelect(selectedName);
   };
 
   return (
@@ -209,15 +252,13 @@ function SelectEvalueeForm({ employees, onSelect }) {
         >
           <option value="">-- Выберите из списка --</option>
           {employees.map((name, idx) => (
-            <option key={idx} value={name}>
-              {name}
-            </option>
+            <option key={idx} value={name}>{name}</option>
           ))}
         </select>
       </div>
 
-      <button 
-        type="submit" 
+      <button
+        type="submit"
         disabled={!selectedName}
         className="btn btn-success"
         style={{ opacity: selectedName ? 1 : 0.5 }}

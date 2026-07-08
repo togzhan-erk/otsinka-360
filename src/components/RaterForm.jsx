@@ -26,18 +26,22 @@ function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluee
     setSubmitting(true);
     setError('');
 
-    try {
-      await addDoc(collection(db, 'feedback'), {
-        evalueeId: evaluee.id,
-        evalueeName: evaluee.name,
-        raterType: raterType || 'unknown',
-        competencyScores: scores,
-        openQuestions: { strength, improvement },
-        submittedAt: serverTimestamp(),
-      });
+    const payload = {
+      evalueeId: evaluee.id,
+      evalueeName: evaluee.name,
+      raterType: raterType || 'unknown',
+      competencyScores: scores,
+      openQuestions: { strength, improvement },
+      submittedAt: serverTimestamp(),
+    };
+    console.log('[RaterForm] Writing to Firestore feedback collection:', payload);
 
+    try {
+      const docRef = await addDoc(collection(db, 'feedback'), payload);
+      console.log('[RaterForm] Successfully written, doc ID:', docRef.id);
       onSubmit({ competencyScores: scores, openQuestions: { strength, improvement } });
     } catch (err) {
+      console.error('[RaterForm] Firestore write error:', err.code, err.message);
       setError('Ошибка сохранения: ' + err.message);
       setSubmitting(false);
     }

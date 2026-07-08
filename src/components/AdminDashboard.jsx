@@ -1,20 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStartOver, competencies }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStartOver, onNewProject, competencies }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
+  const [firestoreError, setFirestoreError] = useState(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'feedback'), orderBy('submittedAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setFeedbackList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setLoadingResults(false);
-    }, () => {
-      setLoadingResults(false);
-    });
+    console.log('[AdminDashboard] Subscribing to feedback collection...');
+    const unsubscribe = onSnapshot(
+      collection(db, 'feedback'),
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log('[AdminDashboard] Received', data.length, 'feedback docs:', data);
+        setFeedbackList(data);
+        setLoadingResults(false);
+        setFirestoreError(null);
+      },
+      (err) => {
+        console.error('[AdminDashboard] Firestore read error:', err.code, err.message);
+        setFirestoreError(err.message);
+        setLoadingResults(false);
+      }
+    );
     return unsubscribe;
   }, []);
 
@@ -61,6 +71,17 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
                 <div className="stat-label">Получено ответов</div>
               </div>
             </div>
+
+            {employees.length > 0 && (
+              <div style={{ marginTop: '1.5rem' }}>
+                <h4>Сотрудники в проекте:</h4>
+                <ul style={{ paddingLeft: '1.5rem', color: '#3c3c44' }}>
+                  {employees.map(emp => (
+                    <li key={emp.id}>{emp.name} — {emp.email}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 
@@ -68,10 +89,22 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
           <div style={{ marginTop: '2rem' }}>
             <h3>Результаты оценок</h3>
 
-            {loadingResults && <p>Загрузка...</p>}
+            {loadingResults && <p style={{ color: '#6f6f77' }}>Загрузка из Firestore...</p>}
 
-            {!loadingResults && feedbackList.length === 0 && (
-              <p style={{ color: '#6f6f77' }}>Оценок пока нет. Они появятся здесь после того, как участники заполнят форму.</p>
+            {firestoreError && (
+              <div className="error-message">
+                Ошибка чтения из Firestore: {firestoreError}
+                <br />
+                <small>Проверьте правила безопасности в Firebase Console → Firestore → Rules</small>
+              </div>
+            )}
+
+            {!loadingResults && !firestoreError && feedbackList.length === 0 && (
+              <p style={{ color: '#6f6f77' }}>
+                Оценок пока нет. Они появятся здесь после того, как участники заполнят форму.
+                <br />
+                <small>Если вы только что отправили оценку — откройте DevTools (F12) → Console и проверьте логи.</small>
+              </p>
             )}
 
             {!loadingResults && Object.values(grouped).map(group => (
@@ -84,9 +117,18 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
           </div>
         )}
 
-        <button onClick={onStartOver} className="btn btn-secondary" style={{ marginTop: '2rem' }}>
-          ← На главную
-        </button>
+        <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <button
+            onClick={onNewProject}
+            className="btn btn-success"
+            style={{ background: '#ff3b30' }}
+          >
+            + Начать новый проект оценки
+          </button>
+          <button onClick={onStartOver} className="btn btn-secondary">
+            ← На главную
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -95,7 +137,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
 function EmployeeResult({ group, competencies }) {
   const avgScores = competencies.map(comp => {
     const vals = group.feedbacks
-      .map(f => f.competencyScores?.[comp.id] ?? f.competencyScores?.[String(comp.id)])
+      .map(f => {
+        const byNum = f.competencyScores?.[comp.id];
+        const byStr = f.competencyScores?.[String(comp.id)];
+        return byNum ?? byStr;
+      })
       .filter(v => v !== undefined && v !== null);
     const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     return { ...comp, avg };
@@ -108,16 +154,16 @@ function EmployeeResult({ group, competencies }) {
     <div style={{ border: '1px solid #e5e5e7', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem' }}>
       <h4 style={{ marginBottom: '0.25rem' }}>{group.name}</h4>
       <p style={{ color: '#6f6f77', fontSize: '0.9rem', marginBottom: '1rem' }}>
-        {group.feedbacks.length} оценок · типы: {[...new Set(group.feedbacks.map(f => f.raterType))].join(', ')}
+        {group.feedbacks.length} {group.feedbacks.length === 1 ? 'оценка' : 'оценок'} · типы: {[...new Set(group.feedbacks.map(f => f.raterType))].join(', ')}
       </p>
 
       {avgScores.length > 0 && (
         <div style={{ marginBottom: '1rem' }}>
           <strong>Средние баллы:</strong>
           {avgScores.map(comp => (
-            <div key={comp.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', borderBottom: '1px solid #f5f5f7' }}>
+            <div key={comp.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: '1px solid #f5f5f7' }}>
               <span>{comp.name}</span>
-              <span style={{ fontWeight: '600', color: comp.avg >= 4 ? '#34c759' : comp.avg >= 3 ? '#ff9500' : '#ff3b30' }}>
+              <span style={{ fontWeight: '600', color: comp.avg === null ? '#c7c7cc' : comp.avg >= 4 ? '#34c759' : comp.avg >= 3 ? '#ff9500' : '#ff3b30' }}>
                 {comp.avg !== null ? comp.avg.toFixed(1) : '—'} / 5
               </span>
             </div>
