@@ -189,7 +189,7 @@ function App() {
         {userRole === 'rater' && stage === 'selectEvaluee' && (
           <div className="container">
             <div className="card">
-              <BackButton onBack={goBack} />
+              <BackButton onBack={navigationStack.length > 0 ? goBack : null} />
               <h2>Выберите оцениваемого</h2>
               <p className="subtitle">Кого вы будете оценивать?</p>
               <SelectEvalueeForm
@@ -203,7 +203,7 @@ function App() {
         {userRole === 'rater' && stage === 'selectRaterType' && (
           <div className="container">
             <div className="card">
-              <BackButton onBack={goBack} />
+              <BackButton onBack={navigationStack.length > 0 ? goBack : null} />
               <h2>Выберите тип отношения</h2>
               <p className="subtitle">Какой тип отношения у вас с {currentEvaluee}?</p>
 
@@ -238,7 +238,7 @@ function App() {
             competencies={EMPLOYEE_COMPETENCIES}
             employeeType="employee"
             onSubmit={handleRaterSubmitFeedback}
-            onBack={goBack}
+            onBack={navigationStack.length > 0 ? goBack : null}
             currentIndex={1}
             totalEvaluees={1}
             raterType={RELATIONSHIP_TYPES.find(t => t.value === currentRaterType)?.label}
@@ -250,14 +250,14 @@ function App() {
         )}
 
         {userRole === 'admin' && stage === 'adminUpload' && (
-          <AdminUpload onUpload={handleAdminUploadFile} onBack={goBack} />
+          <AdminUpload onUpload={handleAdminUploadFile} onBack={navigationStack.length > 0 ? goBack : null} />
         )}
 
         {userRole === 'admin' && stage === 'roleAssignment' && (
           <RoleAssignment
             employees={employees}
             onComplete={handleRoleAssignmentComplete}
-            onBack={goBack}
+            onBack={navigationStack.length > 0 ? goBack : null}
           />
         )}
 
