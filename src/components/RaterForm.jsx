@@ -2,7 +2,16 @@ import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
-function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluees, raterType }) {
+function BackButton({ onBack }) {
+  if (!onBack) return null;
+  return (
+    <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#6f6f77', cursor: 'pointer', fontSize: '0.95rem', padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+      ← Назад
+    </button>
+  );
+}
+
+function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, totalEvaluees, raterType }) {
   const [scores, setScores] = useState(
     competencies.reduce((acc, comp) => ({ ...acc, [comp.id]: 3 }), {})
   );
@@ -50,6 +59,7 @@ function RaterForm({ evaluee, competencies, onSubmit, currentIndex, totalEvaluee
   return (
     <div className="container">
       <div className="card">
+        <BackButton onBack={onBack} />
         <h2>Оценка компетенций</h2>
         <p className="subtitle">Оцените {evaluee?.name}</p>
 

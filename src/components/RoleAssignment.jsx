@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 
-function RoleAssignment({ employees, onComplete }) {
+function BackButton({ onBack }) {
+  if (!onBack) return null;
+  return (
+    <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#6f6f77', cursor: 'pointer', fontSize: '0.95rem', padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+      ← Назад
+    </button>
+  );
+}
+
+function RoleAssignment({ employees, onComplete, onBack }) {
   const [assignments, setAssignments] = useState([]);
   const [selectedEvaluee, setSelectedEvaluee] = useState('');
   const [selectedRater, setSelectedRater] = useState('');
@@ -36,6 +45,7 @@ function RoleAssignment({ employees, onComplete }) {
   return (
     <div className="container">
       <div className="card">
+        <BackButton onBack={onBack} />
         <h2>Назначение оценок</h2>
 
         <div className="form-group">

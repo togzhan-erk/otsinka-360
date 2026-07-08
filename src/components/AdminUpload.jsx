@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 
-function AdminUpload({ onUpload }) {
+function BackButton({ onBack }) {
+  if (!onBack) return null;
+  return (
+    <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#6f6f77', cursor: 'pointer', fontSize: '0.95rem', padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+      ← Назад
+    </button>
+  );
+}
+
+function AdminUpload({ onUpload, onBack }) {
   const [employees, setEmployees] = useState([]);
   const [showTable, setShowTable] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +67,7 @@ function AdminUpload({ onUpload }) {
   return (
     <div className="container">
       <div className="card">
+        <BackButton onBack={onBack} />
         <h2>Загрузка сотрудников</h2>
         <p className="subtitle">Загрузите Excel файл со списком</p>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import RoleSelector from './components/RoleSelector';
 import RaterForm from './components/RaterForm';
@@ -33,14 +33,66 @@ function App() {
   const [employees, setEmployees] = useState([]);
   const [roleAssignments, setRoleAssignments] = useState([]);
   const [submittedFeedback, setSubmittedFeedback] = useState([]);
+  const [navigationStack, setNavigationStack] = useState([]);
 
+  // Snapshot of current nav-relevant state — called synchronously in event handlers
+  const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType });
+
+  // Push current state onto the stack and add a browser history entry
+  const pushNav = () => {
+    setNavigationStack(prev => [...prev, captureNav()]);
+    window.history.pushState({}, '', '/');
+  };
+
+  // Restore the previous state from the stack (used by back button + browser back)
+  // Uses functional updater so it's always reading fresh stack state — safe for useCallback([])
+  const goBack = useCallback(() => {
+    setNavigationStack(prev => {
+      if (prev.length === 0) return prev;
+      const snap = prev[prev.length - 1];
+      setStage(snap.stage);
+      setUserRole(snap.userRole);
+      setCurrentEvaluee(snap.currentEvaluee);
+      setCurrentRaterType(snap.currentRaterType);
+      return prev.slice(0, -1);
+    });
+  }, []); // stable: only uses functional updater + stable setter refs
+
+  // Seed browser history and wire up the browser back button
+  useEffect(() => {
+    window.history.replaceState({}, '', '/');
+    window.addEventListener('popstate', goBack);
+    return () => window.removeEventListener('popstate', goBack);
+  }, [goBack]);
+
+  // ── Rater flow ────────────────────────────────────────────────────────────
   const handleSelectRaterRole = () => {
+    pushNav();
     setUserRole('rater');
     setStage('selectEvaluee');
   };
 
-  // При входе HR-директора — сразу проверяем Firestore на активный проект
+  const handleSelectEvaluee = (name) => {
+    pushNav();
+    setCurrentEvaluee(name);
+    setStage('selectRaterType');
+  };
+
+  const handleSelectRaterType = (relationType) => {
+    pushNav();
+    setCurrentRaterType(relationType);
+    setStage('raterForm');
+  };
+
+  const handleRaterSubmitFeedback = (feedback) => {
+    setSubmittedFeedback(prev => [...prev, feedback]);
+    setNavigationStack([]); // clear history after successful submit
+    setStage('thankYou');
+  };
+
+  // ── Admin flow ─────────────────────────────────────────────────────────────
   const handleSelectAdminRole = async () => {
+    pushNav();
     setUserRole('admin');
     setStage('checkingProject');
     try {
@@ -61,27 +113,12 @@ function App() {
     }
   };
 
-  const handleSelectEvaluee = (name) => {
-    setCurrentEvaluee(name);
-    setStage('selectRaterType');
-  };
-
-  const handleSelectRaterType = (relationType) => {
-    setCurrentRaterType(relationType);
-    setStage('raterForm');
-  };
-
-  const handleRaterSubmitFeedback = (feedback) => {
-    setSubmittedFeedback([...submittedFeedback, feedback]);
-    setStage('thankYou');
-  };
-
   const handleAdminUploadFile = (employeesData) => {
+    pushNav();
     setEmployees(employeesData);
     setStage('roleAssignment');
   };
 
-  // Сохраняем проект в Firestore при завершении RoleAssignment
   const handleRoleAssignmentComplete = async (assignments) => {
     setRoleAssignments(assignments);
     try {
@@ -94,10 +131,10 @@ function App() {
     } catch (err) {
       console.error('[App] Failed to save project:', err);
     }
+    setNavigationStack([]); // clear history — dashboard has its own nav
     setStage('adminDashboard');
   };
 
-  // "Начать новый проект" — удаляет активный проект из Firestore
   const handleNewProject = async () => {
     try {
       await deleteDoc(doc(db, 'projects', 'active'));
@@ -105,6 +142,7 @@ function App() {
     } catch (err) {
       console.error('[App] Failed to delete project:', err);
     }
+    setNavigationStack([]);
     setUserRole(null);
     setStage('roleSelector');
     setCurrentEvaluee(null);
@@ -115,6 +153,7 @@ function App() {
   };
 
   const handleStartOver = () => {
+    setNavigationStack([]);
     setUserRole(null);
     setStage('roleSelector');
     setCurrentEvaluee(null);
@@ -150,6 +189,7 @@ function App() {
         {userRole === 'rater' && stage === 'selectEvaluee' && (
           <div className="container">
             <div className="card">
+              <BackButton onBack={goBack} />
               <h2>Выберите оцениваемого</h2>
               <p className="subtitle">Кого вы будете оценивать?</p>
               <SelectEvalueeForm
@@ -163,6 +203,7 @@ function App() {
         {userRole === 'rater' && stage === 'selectRaterType' && (
           <div className="container">
             <div className="card">
+              <BackButton onBack={goBack} />
               <h2>Выберите тип отношения</h2>
               <p className="subtitle">Какой тип отношения у вас с {currentEvaluee}?</p>
 
@@ -197,6 +238,7 @@ function App() {
             competencies={EMPLOYEE_COMPETENCIES}
             employeeType="employee"
             onSubmit={handleRaterSubmitFeedback}
+            onBack={goBack}
             currentIndex={1}
             totalEvaluees={1}
             raterType={RELATIONSHIP_TYPES.find(t => t.value === currentRaterType)?.label}
@@ -208,13 +250,14 @@ function App() {
         )}
 
         {userRole === 'admin' && stage === 'adminUpload' && (
-          <AdminUpload onUpload={handleAdminUploadFile} />
+          <AdminUpload onUpload={handleAdminUploadFile} onBack={goBack} />
         )}
 
         {userRole === 'admin' && stage === 'roleAssignment' && (
           <RoleAssignment
             employees={employees}
             onComplete={handleRoleAssignmentComplete}
+            onBack={goBack}
           />
         )}
 
@@ -230,6 +273,28 @@ function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function BackButton({ onBack }) {
+  return (
+    <button
+      onClick={onBack}
+      style={{
+        background: 'none',
+        border: 'none',
+        color: '#6f6f77',
+        cursor: 'pointer',
+        fontSize: '0.95rem',
+        padding: '0',
+        marginBottom: '1.25rem',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+      }}
+    >
+      ← Назад
+    </button>
   );
 }
 
