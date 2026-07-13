@@ -25,26 +25,27 @@ const RELATIONSHIP_TYPES = [
   { value: 'subordinate', label: 'Подчиненный', description: 'Он мой прямой подчиненный', icon: '👤' }
 ];
 
-// Read URL params and resolve evaluee/rater names from a project snapshot.
-// Returns null if no invite params present.
-function resolveInviteParams(projectData) {
-  const params = new URLSearchParams(window.location.search);
-  const evalueeId = params.get('evaluee');
-  const raterId = params.get('rater');
-  const type = params.get('type');
-  if (!evalueeId || !raterId || !type) return null;
+// Capture invite params at module load time — before any React effects run or
+// history.replaceState clears the URL. This is the only safe place to read them.
+const _initialParams = new URLSearchParams(window.location.search);
+const INVITE = {
+  evalueeId: _initialParams.get('evaluee'),
+  raterId: _initialParams.get('rater'),
+  type: _initialParams.get('type'),
+};
+console.log('[App] URL params captured at module load:', window.location.search, INVITE);
 
+function resolveInviteFromProject(projectData) {
+  if (!INVITE.evalueeId || !INVITE.raterId || !INVITE.type) return null;
   const employees = projectData?.employees || [];
-  const evaluee = employees.find(e => e.id === evalueeId);
-  const rater = employees.find(e => e.id === raterId);
-  if (!evaluee || !rater) return null;
-
-  const relationType = RELATIONSHIP_TYPES.find(r => r.value === type);
-  return {
-    evaluee,
-    raterType: relationType?.label || type,
-    raterTypeValue: type,
-  };
+  const evaluee = employees.find(e => e.id === INVITE.evalueeId);
+  const rater = employees.find(e => e.id === INVITE.raterId);
+  if (!evaluee || !rater) {
+    console.warn('[App] Invite params found but could not match employees. evalueeId:', INVITE.evalueeId, 'raterId:', INVITE.raterId, 'employees in project:', employees.map(e => e.id));
+    return null;
+  }
+  const relationType = RELATIONSHIP_TYPES.find(r => r.value === INVITE.type);
+  return { evaluee, rater, raterTypeValue: INVITE.type, raterTypeLabel: relationType?.label || INVITE.type };
 }
 
 function App() {
@@ -57,29 +58,27 @@ function App() {
   const [submittedFeedback, setSubmittedFeedback] = useState([]);
   const [navigationStack, setNavigationStack] = useState([]);
 
-  // On first load, check URL params — if this is an invite link, skip straight to RaterForm.
+  // On first load: if invite params were captured at module level, load project and open RaterForm.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.get('evaluee')) return; // not an invite link
+    if (!INVITE.evalueeId) return; // not an invite link
 
     (async () => {
       setStage('loadingRaterData');
       try {
         const snap = await getDoc(doc(db, 'projects', 'active'));
         const projectData = snap.exists() ? snap.data() : null;
-        const invite = resolveInviteParams(projectData);
+        const invite = resolveInviteFromProject(projectData);
 
         if (invite) {
-          console.log('[App] Invite link detected:', invite);
+          console.log('[App] Invite resolved successfully:', invite);
           setEmployees(projectData.employees || []);
           setCurrentEvaluee(invite.evaluee.name);
           setCurrentRaterType(invite.raterTypeValue);
           setUserRole('rater');
           setStage('raterForm');
-          // Clean up URL so refresh doesn't re-trigger
           window.history.replaceState({}, '', '/');
         } else {
-          console.warn('[App] Invite params in URL but could not resolve employees — showing role selector');
+          console.warn('[App] Invite params present but could not resolve — showing role selector');
           setStage('roleSelector');
         }
       } catch (err) {
@@ -109,7 +108,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    window.history.replaceState({}, '', '/');
+    // Don't overwrite URL if we're processing an invite link — the invite effect handles cleanup.
+    if (!INVITE.evalueeId) {
+      window.history.replaceState({}, '', '/');
+    }
     window.addEventListener('popstate', goBack);
     return () => window.removeEventListener('popstate', goBack);
   }, [goBack]);
