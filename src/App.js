@@ -25,6 +25,28 @@ const RELATIONSHIP_TYPES = [
   { value: 'subordinate', label: 'Подчиненный', description: 'Он мой прямой подчиненный', icon: '👤' }
 ];
 
+// Read URL params and resolve evaluee/rater names from a project snapshot.
+// Returns null if no invite params present.
+function resolveInviteParams(projectData) {
+  const params = new URLSearchParams(window.location.search);
+  const evalueeId = params.get('evaluee');
+  const raterId = params.get('rater');
+  const type = params.get('type');
+  if (!evalueeId || !raterId || !type) return null;
+
+  const employees = projectData?.employees || [];
+  const evaluee = employees.find(e => e.id === evalueeId);
+  const rater = employees.find(e => e.id === raterId);
+  if (!evaluee || !rater) return null;
+
+  const relationType = RELATIONSHIP_TYPES.find(r => r.value === type);
+  return {
+    evaluee,
+    raterType: relationType?.label || type,
+    raterTypeValue: type,
+  };
+}
+
 function App() {
   const [userRole, setUserRole] = useState(null);
   const [stage, setStage] = useState('roleSelector');
@@ -34,6 +56,38 @@ function App() {
   const [roleAssignments, setRoleAssignments] = useState([]);
   const [submittedFeedback, setSubmittedFeedback] = useState([]);
   const [navigationStack, setNavigationStack] = useState([]);
+
+  // On first load, check URL params — if this is an invite link, skip straight to RaterForm.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('evaluee')) return; // not an invite link
+
+    (async () => {
+      setStage('loadingRaterData');
+      try {
+        const snap = await getDoc(doc(db, 'projects', 'active'));
+        const projectData = snap.exists() ? snap.data() : null;
+        const invite = resolveInviteParams(projectData);
+
+        if (invite) {
+          console.log('[App] Invite link detected:', invite);
+          setEmployees(projectData.employees || []);
+          setCurrentEvaluee(invite.evaluee.name);
+          setCurrentRaterType(invite.raterTypeValue);
+          setUserRole('rater');
+          setStage('raterForm');
+          // Clean up URL so refresh doesn't re-trigger
+          window.history.replaceState({}, '', '/');
+        } else {
+          console.warn('[App] Invite params in URL but could not resolve employees — showing role selector');
+          setStage('roleSelector');
+        }
+      } catch (err) {
+        console.error('[App] Error resolving invite link:', err);
+        setStage('roleSelector');
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType });
 
@@ -61,8 +115,6 @@ function App() {
   }, [goBack]);
 
   // ── Rater flow ─────────────────────────────────────────────────────────────
-  // Loads employees from Firestore so raters see the correct list
-  // regardless of whether admin used the same device/session.
   const handleSelectRaterRole = async () => {
     pushNav();
     setUserRole('rater');
@@ -74,11 +126,11 @@ function App() {
         console.log('[App] Rater flow: loaded employees from Firestore:', data.employees);
         setEmployees(data.employees || []);
       } else {
-        console.log('[App] Rater flow: no active project found in Firestore — employee list will be empty');
+        console.log('[App] Rater flow: no active project found in Firestore');
         setEmployees([]);
       }
     } catch (err) {
-      console.error('[App] Rater flow: error loading employees from Firestore:', err);
+      console.error('[App] Rater flow: error loading employees:', err);
       setEmployees([]);
     }
     setStage('selectEvaluee');
@@ -131,7 +183,6 @@ function App() {
     setStage('roleAssignment');
   };
 
-  // Receives employees as parameter to avoid stale closure
   const handleRoleAssignmentComplete = async (assignments, uploadedEmployees) => {
     const employeesToSave = uploadedEmployees || employees;
     setRoleAssignments(assignments);
@@ -150,7 +201,6 @@ function App() {
     setStage('adminDashboard');
   };
 
-  // Requires explicit confirmation — prevents accidental deletion
   const handleNewProject = async () => {
     const confirmed = window.confirm(
       'Начать новый проект оценки?\n\nТекущий список сотрудников и назначения будут удалены. Уже полученные оценки (feedback) в базе данных сохранятся.'

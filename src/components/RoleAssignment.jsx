@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
 
+const RELATIONSHIP_TYPES = [
+  { value: 'self', label: 'Самооценка' },
+  { value: 'manager', label: 'Руководитель' },
+  { value: 'colleague', label: 'Коллега' },
+  { value: 'subordinate', label: 'Подчиненный' },
+];
+
 function BackButton({ onBack }) {
   if (!onBack) return null;
   return (
@@ -13,6 +20,7 @@ function RoleAssignment({ employees, onComplete, onBack }) {
   const [assignments, setAssignments] = useState([]);
   const [selectedEvaluee, setSelectedEvaluee] = useState('');
   const [selectedRater, setSelectedRater] = useState('');
+  const [selectedType, setSelectedType] = useState('colleague');
   const [error, setError] = useState('');
 
   const handleAdd = () => {
@@ -24,11 +32,13 @@ function RoleAssignment({ employees, onComplete, onBack }) {
     const newAssign = {
       id: Date.now(),
       evalueeId: selectedEvaluee,
-      raterId: selectedRater
+      raterId: selectedRater,
+      relationType: selectedType,
     };
 
     setAssignments([...assignments, newAssign]);
     setSelectedRater('');
+    setSelectedType('colleague');
     setError('');
   };
 
@@ -37,11 +47,11 @@ function RoleAssignment({ employees, onComplete, onBack }) {
       setError('Добавьте назначения');
       return;
     }
-    // Pass employees as second arg so App.js avoids stale closure when saving to Firestore
     onComplete(assignments, employees);
   };
 
   const getNameById = (id) => employees.find(e => e.id === id)?.name || 'Unknown';
+  const getLabelByType = (type) => RELATIONSHIP_TYPES.find(r => r.value === type)?.label || type;
 
   return (
     <div className="container">
@@ -51,8 +61,8 @@ function RoleAssignment({ employees, onComplete, onBack }) {
 
         <div className="form-group">
           <label>Оцениваемый:</label>
-          <select 
-            value={selectedEvaluee} 
+          <select
+            value={selectedEvaluee}
             onChange={(e) => setSelectedEvaluee(e.target.value)}
             className="input"
           >
@@ -67,14 +77,27 @@ function RoleAssignment({ employees, onComplete, onBack }) {
           <>
             <div className="form-group">
               <label>Оценивающий:</label>
-              <select 
-                value={selectedRater} 
+              <select
+                value={selectedRater}
                 onChange={(e) => setSelectedRater(e.target.value)}
                 className="input"
               >
                 <option value="">-- Выберите --</option>
                 {employees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Тип отношений:</label>
+              <select
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="input"
+              >
+                {RELATIONSHIP_TYPES.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
             </div>
@@ -93,8 +116,12 @@ function RoleAssignment({ employees, onComplete, onBack }) {
           <div style={{ marginTop: '2rem' }}>
             <h3>Добавленные ({assignments.length})</h3>
             {assignments.map(a => (
-              <div key={a.id} style={{ padding: '0.5rem', background: '#f5f5f7', margin: '0.5rem 0' }}>
-                <strong>{getNameById(a.evalueeId)}</strong> ← оценивает ← <strong>{getNameById(a.raterId)}</strong>
+              <div key={a.id} style={{ padding: '0.5rem', background: '#f5f5f7', margin: '0.5rem 0', borderRadius: '6px' }}>
+                <strong>{getNameById(a.evalueeId)}</strong>
+                {' ← '}
+                <span style={{ color: '#6f6f77', fontSize: '0.9rem' }}>{getLabelByType(a.relationType)}</span>
+                {' ← '}
+                <strong>{getNameById(a.raterId)}</strong>
               </div>
             ))}
           </div>

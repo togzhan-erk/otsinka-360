@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import emailjs from '@emailjs/browser';
+
+const BASE_URL = 'https://otsinka-360.vercel.app';
 
 function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStartOver, onNewProject, competencies }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
   const [firestoreError, setFirestoreError] = useState(null);
+  // Map of assignmentId → 'idle' | 'sending' | 'sent' | 'error'
+  const [inviteStatus, setInviteStatus] = useState({});
 
   useEffect(() => {
-    console.log('[AdminDashboard] Subscribing to feedback collection...');
     const unsubscribe = onSnapshot(
       collection(db, 'feedback'),
       (snapshot) => {
@@ -28,6 +32,43 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
     return unsubscribe;
   }, []);
 
+  const getEmployee = (id) => employees.find(e => e.id === id);
+
+  const handleSendInvite = async (assignment) => {
+    const rater = getEmployee(assignment.raterId);
+    const evaluee = getEmployee(assignment.evalueeId);
+    if (!rater || !evaluee) return;
+
+    const relationType = assignment.relationType || 'colleague';
+    const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}`;
+
+    console.log('[AdminDashboard] Sending invite to', rater.email, 'link:', link);
+    setInviteStatus(prev => ({ ...prev, [assignment.id]: 'sending' }));
+
+    try {
+      await emailjs.send(
+        process.env.REACT_APP_EMAILJS_SERVICE_ID,
+        process.env.REACT_APP_EMAILJS_TEMPLATE_ID,
+        { link, to_email: rater.email, to_name: rater.name, evaluee_name: evaluee.name },
+        process.env.REACT_APP_EMAILJS_PUBLIC_KEY
+      );
+      console.log('[AdminDashboard] Invite sent successfully to', rater.email);
+      setInviteStatus(prev => ({ ...prev, [assignment.id]: 'sent' }));
+    } catch (err) {
+      console.error('[AdminDashboard] EmailJS error:', err);
+      setInviteStatus(prev => ({ ...prev, [assignment.id]: 'error' }));
+    }
+  };
+
+  const handleSendAll = async () => {
+    const pending = roleAssignments.filter(a => inviteStatus[a.id] !== 'sent');
+    for (const assignment of pending) {
+      await handleSendInvite(assignment);
+    }
+  };
+
+  const sentCount = roleAssignments.filter(a => inviteStatus[a.id] === 'sent').length;
+
   const grouped = feedbackList.reduce((acc, item) => {
     const key = item.evalueeName || 'Неизвестный';
     if (!acc[key]) acc[key] = { name: key, feedbacks: [] };
@@ -41,16 +82,13 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
         <h2>Панель администратора</h2>
 
         <div className="admin-tabs">
-          <button
-            className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
+          <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
             📊 Обзор
           </button>
-          <button
-            className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`}
-            onClick={() => setActiveTab('results')}
-          >
+          <button className={`tab-btn ${activeTab === 'invitations' ? 'active' : ''}`} onClick={() => setActiveTab('invitations')}>
+            ✉️ Приглашения {sentCount > 0 && `(${sentCount}/${roleAssignments.length})`}
+          </button>
+          <button className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`} onClick={() => setActiveTab('results')}>
             📈 Результаты
           </button>
         </div>
@@ -85,6 +123,87 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
           </div>
         )}
 
+        {activeTab === 'invitations' && (
+          <div style={{ marginTop: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0 }}>Приглашения на оценку</h3>
+              {roleAssignments.length > 0 && (
+                <button
+                  className="btn btn-success"
+                  onClick={handleSendAll}
+                  disabled={roleAssignments.every(a => inviteStatus[a.id] === 'sent')}
+                >
+                  Отправить все
+                </button>
+              )}
+            </div>
+
+            {roleAssignments.length === 0 && (
+              <p style={{ color: '#6f6f77' }}>
+                Назначений нет. Вернитесь на главную и создайте проект с назначениями.
+              </p>
+            )}
+
+            {roleAssignments.map(assignment => {
+              const rater = getEmployee(assignment.raterId);
+              const evaluee = getEmployee(assignment.evalueeId);
+              if (!rater || !evaluee) return null;
+
+              const status = inviteStatus[assignment.id] || 'idle';
+              const relationType = assignment.relationType || 'colleague';
+              const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}`;
+
+              return (
+                <div
+                  key={assignment.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '1rem',
+                    border: '1px solid #e5e5e7',
+                    borderRadius: '8px',
+                    marginBottom: '0.75rem',
+                    background: status === 'sent' ? '#f0fdf4' : 'white',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: '600', marginBottom: '0.2rem' }}>
+                      {rater.name} оценивает {evaluee.name}
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#6f6f77' }}>
+                      {rater.email} · <a href={link} target="_blank" rel="noreferrer" style={{ color: '#0071e3' }}>ссылка</a>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {status === 'sent' && (
+                      <span style={{ color: '#34c759', fontSize: '0.9rem', fontWeight: '500' }}>✓ Отправлено</span>
+                    )}
+                    {status === 'error' && (
+                      <span style={{ color: '#ff3b30', fontSize: '0.9rem' }}>Ошибка</span>
+                    )}
+                    <button
+                      className="btn btn-success"
+                      onClick={() => handleSendInvite(assignment)}
+                      disabled={status === 'sending'}
+                      style={{
+                        padding: '0.4rem 1rem',
+                        fontSize: '0.9rem',
+                        opacity: status === 'sending' ? 0.6 : 1,
+                      }}
+                    >
+                      {status === 'sending' ? 'Отправка...' : status === 'sent' ? 'Отправить снова' : 'Отправить'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {activeTab === 'results' && (
           <div style={{ marginTop: '2rem' }}>
             <h3>Результаты оценок</h3>
@@ -108,21 +227,13 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
             )}
 
             {!loadingResults && Object.values(grouped).map(group => (
-              <EmployeeResult
-                key={group.name}
-                group={group}
-                competencies={competencies || []}
-              />
+              <EmployeeResult key={group.name} group={group} competencies={competencies || []} />
             ))}
           </div>
         )}
 
         <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <button
-            onClick={onNewProject}
-            className="btn btn-success"
-            style={{ background: '#ff3b30' }}
-          >
+          <button onClick={onNewProject} className="btn btn-success" style={{ background: '#ff3b30' }}>
             + Начать новый проект оценки
           </button>
           <button onClick={onStartOver} className="btn btn-secondary">
