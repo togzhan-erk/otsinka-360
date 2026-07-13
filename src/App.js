@@ -35,17 +35,13 @@ function App() {
   const [submittedFeedback, setSubmittedFeedback] = useState([]);
   const [navigationStack, setNavigationStack] = useState([]);
 
-  // Snapshot of current nav-relevant state — called synchronously in event handlers
   const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType });
 
-  // Push current state onto the stack and add a browser history entry
   const pushNav = () => {
     setNavigationStack(prev => [...prev, captureNav()]);
     window.history.pushState({}, '', '/');
   };
 
-  // Restore the previous state from the stack (used by back button + browser back)
-  // Uses functional updater so it's always reading fresh stack state — safe for useCallback([])
   const goBack = useCallback(() => {
     setNavigationStack(prev => {
       if (prev.length === 0) return prev;
@@ -56,19 +52,35 @@ function App() {
       setCurrentRaterType(snap.currentRaterType);
       return prev.slice(0, -1);
     });
-  }, []); // stable: only uses functional updater + stable setter refs
+  }, []);
 
-  // Seed browser history and wire up the browser back button
   useEffect(() => {
     window.history.replaceState({}, '', '/');
     window.addEventListener('popstate', goBack);
     return () => window.removeEventListener('popstate', goBack);
   }, [goBack]);
 
-  // ── Rater flow ────────────────────────────────────────────────────────────
-  const handleSelectRaterRole = () => {
+  // ── Rater flow ─────────────────────────────────────────────────────────────
+  // Loads employees from Firestore so raters see the correct list
+  // regardless of whether admin used the same device/session.
+  const handleSelectRaterRole = async () => {
     pushNav();
     setUserRole('rater');
+    setStage('loadingRaterData');
+    try {
+      const snap = await getDoc(doc(db, 'projects', 'active'));
+      if (snap.exists()) {
+        const data = snap.data();
+        console.log('[App] Rater flow: loaded employees from Firestore:', data.employees);
+        setEmployees(data.employees || []);
+      } else {
+        console.log('[App] Rater flow: no active project found in Firestore — employee list will be empty');
+        setEmployees([]);
+      }
+    } catch (err) {
+      console.error('[App] Rater flow: error loading employees from Firestore:', err);
+      setEmployees([]);
+    }
     setStage('selectEvaluee');
   };
 
@@ -86,7 +98,7 @@ function App() {
 
   const handleRaterSubmitFeedback = (feedback) => {
     setSubmittedFeedback(prev => [...prev, feedback]);
-    setNavigationStack([]); // clear history after successful submit
+    setNavigationStack([]);
     setStage('thankYou');
   };
 
@@ -99,16 +111,16 @@ function App() {
       const snap = await getDoc(doc(db, 'projects', 'active'));
       if (snap.exists()) {
         const data = snap.data();
-        console.log('[App] Found existing project in Firestore:', data);
+        console.log('[App] Admin flow: found existing project in Firestore:', data);
         setEmployees(data.employees || []);
         setRoleAssignments(data.roleAssignments || []);
         setStage('adminDashboard');
       } else {
-        console.log('[App] No existing project, starting fresh');
+        console.log('[App] Admin flow: no existing project, starting fresh');
         setStage('adminUpload');
       }
     } catch (err) {
-      console.error('[App] Error checking project:', err);
+      console.error('[App] Admin flow: error checking project:', err);
       setStage('adminUpload');
     }
   };
@@ -119,28 +131,38 @@ function App() {
     setStage('roleAssignment');
   };
 
-  const handleRoleAssignmentComplete = async (assignments) => {
+  // Receives employees as parameter to avoid stale closure
+  const handleRoleAssignmentComplete = async (assignments, uploadedEmployees) => {
+    const employeesToSave = uploadedEmployees || employees;
     setRoleAssignments(assignments);
+    console.log('[App] Admin flow: saving project to Firestore. Employees:', employeesToSave, 'Assignments:', assignments);
     try {
       await setDoc(doc(db, 'projects', 'active'), {
-        employees,
+        employees: employeesToSave,
         roleAssignments: assignments,
         savedAt: serverTimestamp(),
       });
-      console.log('[App] Project saved to Firestore');
+      console.log('[App] Admin flow: project saved to Firestore successfully');
     } catch (err) {
-      console.error('[App] Failed to save project:', err);
+      console.error('[App] Admin flow: failed to save project:', err);
     }
-    setNavigationStack([]); // clear history — dashboard has its own nav
+    setNavigationStack([]);
     setStage('adminDashboard');
   };
 
+  // Requires explicit confirmation — prevents accidental deletion
   const handleNewProject = async () => {
+    const confirmed = window.confirm(
+      'Начать новый проект оценки?\n\nТекущий список сотрудников и назначения будут удалены. Уже полученные оценки (feedback) в базе данных сохранятся.'
+    );
+    if (!confirmed) return;
+
+    console.log('[App] Admin flow: user confirmed new project — deleting active project');
     try {
       await deleteDoc(doc(db, 'projects', 'active'));
-      console.log('[App] Active project deleted');
+      console.log('[App] Admin flow: active project deleted');
     } catch (err) {
-      console.error('[App] Failed to delete project:', err);
+      console.error('[App] Admin flow: failed to delete project:', err);
     }
     setNavigationStack([]);
     setUserRole(null);
@@ -178,10 +200,10 @@ function App() {
           />
         )}
 
-        {userRole === 'admin' && stage === 'checkingProject' && (
+        {(stage === 'checkingProject' || stage === 'loadingRaterData') && (
           <div className="container">
             <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-              <p style={{ color: '#6f6f77', fontSize: '1.1rem' }}>Загрузка проекта...</p>
+              <p style={{ color: '#6f6f77', fontSize: '1.1rem' }}>Загрузка...</p>
             </div>
           </div>
         )}
@@ -192,8 +214,13 @@ function App() {
               <BackButton onBack={navigationStack.length > 0 ? goBack : null} />
               <h2>Выберите оцениваемого</h2>
               <p className="subtitle">Кого вы будете оценивать?</p>
+              {employees.length === 0 && (
+                <div className="error-message" style={{ marginBottom: '1rem' }}>
+                  Список сотрудников не найден. Убедитесь, что HR-директор уже создал проект оценки.
+                </div>
+              )}
               <SelectEvalueeForm
-                employees={employees.length > 0 ? employees.map(e => e.name) : []}
+                employees={employees.map(e => e.name)}
                 onSelect={handleSelectEvaluee}
               />
             </div>
@@ -250,7 +277,10 @@ function App() {
         )}
 
         {userRole === 'admin' && stage === 'adminUpload' && (
-          <AdminUpload onUpload={handleAdminUploadFile} onBack={navigationStack.length > 0 ? goBack : null} />
+          <AdminUpload
+            onUpload={handleAdminUploadFile}
+            onBack={navigationStack.length > 0 ? goBack : null}
+          />
         )}
 
         {userRole === 'admin' && stage === 'roleAssignment' && (

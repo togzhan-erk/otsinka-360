@@ -37,7 +37,8 @@ function RoleAssignment({ employees, onComplete, onBack }) {
       setError('Добавьте назначения');
       return;
     }
-    onComplete(assignments);
+    // Pass employees as second arg so App.js avoids stale closure when saving to Firestore
+    onComplete(assignments, employees);
   };
 
   const getNameById = (id) => employees.find(e => e.id === id)?.name || 'Unknown';
