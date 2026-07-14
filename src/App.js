@@ -203,6 +203,21 @@ function App() {
     setStage('adminDashboard');
   };
 
+  const handleDeleteAssignment = async (assignmentId) => {
+    const filtered = roleAssignments.filter(a => a.id !== assignmentId);
+    setRoleAssignments(filtered);
+    try {
+      await setDoc(doc(db, 'projects', 'active'), {
+        employees,
+        roleAssignments: filtered,
+        savedAt: serverTimestamp(),
+      });
+      console.log('[App] Assignment deleted, project updated in Firestore');
+    } catch (err) {
+      console.error('[App] Failed to update project after assignment deletion:', err);
+    }
+  };
+
   const handleNewProject = async () => {
     const confirmed = window.confirm(
       'Начать новый проект оценки?\n\nТекущий список сотрудников и назначения будут удалены. Уже полученные оценки (feedback) в базе данных сохранятся.'
@@ -350,6 +365,7 @@ function App() {
             submittedFeedback={submittedFeedback}
             onStartOver={handleStartOver}
             onNewProject={handleNewProject}
+            onDeleteAssignment={handleDeleteAssignment}
             competencies={EMPLOYEE_COMPETENCIES}
           />
         )}
