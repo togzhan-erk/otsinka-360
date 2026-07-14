@@ -270,7 +270,7 @@ function App() {
         {(stage === 'checkingProject' || stage === 'loadingRaterData') && (
           <div className="container">
             <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-              <p style={{ color: '#6f6f77', fontSize: '1.1rem' }}>Загрузка...</p>
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>Загрузка...</p>
             </div>
           </div>
         )}
@@ -306,19 +306,12 @@ function App() {
                   <button
                     key={type.value}
                     onClick={() => handleSelectRaterType(type.value)}
-                    style={{
-                      padding: '1.5rem',
-                      border: '2px solid #e5e5e7',
-                      borderRadius: '8px',
-                      background: 'white',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.2s'
-                    }}
+                    className="role-card"
+                    style={{ minHeight: 'auto', padding: '1.5rem' }}
                   >
-                    <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{type.icon}</div>
-                    <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>{type.label}</div>
-                    <div style={{ fontSize: '0.9rem', color: '#6f6f77' }}>{type.description}</div>
+                    <div style={{ fontSize: '1.5rem' }}>{type.icon}</div>
+                    <div style={{ fontWeight: '600' }}>{type.label}</div>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{type.description}</div>
                   </button>
                 ))}
               </div>
@@ -375,20 +368,23 @@ function App() {
 }
 
 function BackButton({ onBack }) {
+  if (!onBack) return null;
   return (
     <button
       onClick={onBack}
       style={{
         background: 'none',
         border: 'none',
-        color: '#6f6f77',
+        color: 'var(--color-text-muted)',
         cursor: 'pointer',
-        fontSize: '0.95rem',
+        fontSize: '0.9rem',
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        fontWeight: 500,
         padding: '0',
         marginBottom: '1.25rem',
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '0.25rem',
+        gap: '0.4rem',
       }}
     >
       ← Назад
