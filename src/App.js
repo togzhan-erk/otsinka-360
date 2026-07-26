@@ -8,7 +8,11 @@ import RoleAssignment from './components/RoleAssignment';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeReport from './components/EmployeeReport';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, deleteDoc } from 'firebase/firestore';
+import {
+  migrateLegacyDataIfNeeded, getActiveCycle, getCycle,
+  saveCycleData, archiveCycle, createCycle,
+} from './cycles';
 
 const EMPLOYEE_COMPETENCIES = [
   { id: 1, name: 'Коммуникация', question: 'Ясно выражает свои идеи и активно слушает других' },
@@ -33,6 +37,7 @@ const INVITE = {
   evalueeId: _initialParams.get('evaluee'),
   raterId: _initialParams.get('rater'),
   type: _initialParams.get('type'),
+  cycleId: _initialParams.get('cycle'),
 };
 console.log('[App] URL params captured at module load:', window.location.search, INVITE);
 
@@ -58,22 +63,33 @@ function App() {
   const [roleAssignments, setRoleAssignments] = useState([]);
   const [submittedFeedback, setSubmittedFeedback] = useState([]);
   const [navigationStack, setNavigationStack] = useState([]);
-  const [reportData, setReportData] = useState(null); // { name, feedbacks }
+  const [reportData, setReportData] = useState(null); // { name, feedbacks, cycleId, readOnly }
+  const [currentCycleId, setCurrentCycleId] = useState(null);
 
-  // On first load: if invite params were captured at module level, load project and open RaterForm.
+  // On first load: run the one-time legacy-data migration, then if invite
+  // params were captured at module level, resolve the right cycle and open RaterForm.
   useEffect(() => {
-    if (!INVITE.evalueeId) return; // not an invite link
-
     (async () => {
+      try {
+        await migrateLegacyDataIfNeeded();
+      } catch (err) {
+        console.error('[App] Migration check failed:', err);
+      }
+
+      if (!INVITE.evalueeId) return; // not an invite link
+
       setStage('loadingRaterData');
       try {
-        const snap = await getDoc(doc(db, 'projects', 'active'));
-        const projectData = snap.exists() ? snap.data() : null;
-        const invite = resolveInviteFromProject(projectData);
+        // Invite links carry their own cycle id so answers land in the right
+        // survey. Older links sent before cycles existed have no ?cycle=
+        // param — fall back to whichever cycle is active today.
+        const cycle = (INVITE.cycleId ? await getCycle(INVITE.cycleId) : null) || await getActiveCycle();
+        const invite = cycle ? resolveInviteFromProject(cycle) : null;
 
-        if (invite) {
-          console.log('[App] Invite resolved successfully:', invite);
-          setEmployees(projectData.employees || []);
+        if (invite && cycle) {
+          console.log('[App] Invite resolved successfully:', invite, 'cycle:', cycle.id);
+          setEmployees(cycle.employees || []);
+          setCurrentCycleId(cycle.id);
           setCurrentEvaluee(invite.evaluee.name);
           setCurrentRaterType(invite.raterTypeValue);
           setUserRole('rater');
@@ -124,15 +140,10 @@ function App() {
     setUserRole('rater');
     setStage('loadingRaterData');
     try {
-      const snap = await getDoc(doc(db, 'projects', 'active'));
-      if (snap.exists()) {
-        const data = snap.data();
-        console.log('[App] Rater flow: loaded employees from Firestore:', data.employees);
-        setEmployees(data.employees || []);
-      } else {
-        console.log('[App] Rater flow: no active project found in Firestore');
-        setEmployees([]);
-      }
+      const cycle = await getActiveCycle();
+      console.log('[App] Rater flow: loaded active cycle:', cycle);
+      setEmployees(cycle?.employees || []);
+      setCurrentCycleId(cycle?.id || null);
     } catch (err) {
       console.error('[App] Rater flow: error loading employees:', err);
       setEmployees([]);
@@ -164,19 +175,21 @@ function App() {
     setUserRole('admin');
     setStage('checkingProject');
     try {
-      const snap = await getDoc(doc(db, 'projects', 'active'));
-      if (snap.exists()) {
-        const data = snap.data();
-        console.log('[App] Admin flow: found existing project in Firestore:', data);
-        setEmployees(data.employees || []);
-        setRoleAssignments(data.roleAssignments || []);
+      await migrateLegacyDataIfNeeded();
+      const cycle = await getActiveCycle();
+      console.log('[App] Admin flow: active cycle:', cycle);
+      setCurrentCycleId(cycle?.id || null);
+      if (cycle && (cycle.roleAssignments || []).length > 0) {
+        setEmployees(cycle.employees || []);
+        setRoleAssignments(cycle.roleAssignments || []);
         setStage('adminDashboard');
       } else {
-        console.log('[App] Admin flow: no existing project, starting fresh');
+        console.log('[App] Admin flow: active cycle has no assignments yet, starting setup');
+        setEmployees(cycle?.employees || []);
         setStage('adminUpload');
       }
     } catch (err) {
-      console.error('[App] Admin flow: error checking project:', err);
+      console.error('[App] Admin flow: error checking active cycle:', err);
       setStage('adminUpload');
     }
   };
@@ -190,16 +203,12 @@ function App() {
   const handleRoleAssignmentComplete = async (assignments, uploadedEmployees) => {
     const employeesToSave = uploadedEmployees || employees;
     setRoleAssignments(assignments);
-    console.log('[App] Admin flow: saving project to Firestore. Employees:', employeesToSave, 'Assignments:', assignments);
+    console.log('[App] Admin flow: saving cycle data. Employees:', employeesToSave, 'Assignments:', assignments);
     try {
-      await setDoc(doc(db, 'projects', 'active'), {
-        employees: employeesToSave,
-        roleAssignments: assignments,
-        savedAt: serverTimestamp(),
-      });
-      console.log('[App] Admin flow: project saved to Firestore successfully');
+      await saveCycleData(currentCycleId, { employees: employeesToSave, roleAssignments: assignments });
+      console.log('[App] Admin flow: cycle saved to Firestore successfully');
     } catch (err) {
-      console.error('[App] Admin flow: failed to save project:', err);
+      console.error('[App] Admin flow: failed to save cycle:', err);
     }
     setNavigationStack([]);
     setStage('adminDashboard');
@@ -209,43 +218,35 @@ function App() {
     const filtered = roleAssignments.filter(a => a.id !== assignmentId);
     setRoleAssignments(filtered);
     try {
-      await setDoc(doc(db, 'projects', 'active'), {
-        employees,
-        roleAssignments: filtered,
-        savedAt: serverTimestamp(),
-      });
-      console.log('[App] Assignment deleted, project updated in Firestore');
+      await saveCycleData(currentCycleId, { employees, roleAssignments: filtered });
+      console.log('[App] Assignment deleted, cycle updated in Firestore');
     } catch (err) {
-      console.error('[App] Failed to update project after assignment deletion:', err);
+      console.error('[App] Failed to update cycle after assignment deletion:', err);
     }
   };
 
-  const handleNewProject = async () => {
-    const confirmed = window.confirm(
-      'Начать новый проект оценки?\n\nТекущий список сотрудников и назначения будут удалены. Уже полученные оценки (feedback) в базе данных сохранятся.'
-    );
-    if (!confirmed) return;
-
-    console.log('[App] Admin flow: user confirmed new project — deleting active project');
+  const handleStartNewSurvey = async (name) => {
+    console.log('[App] Starting new survey cycle:', name, '— archiving current cycle:', currentCycleId);
     try {
-      await deleteDoc(doc(db, 'projects', 'active'));
-      console.log('[App] Admin flow: active project deleted');
+      if (currentCycleId) {
+        await archiveCycle(currentCycleId);
+      }
+      const newId = await createCycle(name);
+      setCurrentCycleId(newId);
+      setEmployees([]);
+      setRoleAssignments([]);
+      setNavigationStack([]);
+      setStage('adminUpload');
+      console.log('[App] New cycle created:', newId);
     } catch (err) {
-      console.error('[App] Admin flow: failed to delete project:', err);
+      console.error('[App] Failed to start new survey:', err);
+      alert('Ошибка при создании нового опроса: ' + err.message);
     }
-    setNavigationStack([]);
-    setUserRole(null);
-    setStage('roleSelector');
-    setCurrentEvaluee(null);
-    setCurrentRaterType(null);
-    setEmployees([]);
-    setRoleAssignments([]);
-    setSubmittedFeedback([]);
   };
 
-  const handleOpenReport = (name, feedbacks) => {
+  const handleOpenReport = (name, feedbacks, opts = {}) => {
     pushNav();
-    setReportData({ name, feedbacks });
+    setReportData({ name, feedbacks, cycleId: opts.cycleId || currentCycleId, readOnly: !!opts.readOnly });
     setStage('employeeReport');
   };
 
@@ -256,8 +257,8 @@ function App() {
     if (!confirmed) return;
 
     try {
-      await deleteDoc(doc(db, 'feedback', feedbackItem.id));
-      console.log('[App] Deleted feedback doc', feedbackItem.id);
+      await deleteDoc(doc(db, 'cycles', reportData.cycleId, 'feedback', feedbackItem.id));
+      console.log('[App] Deleted feedback doc', feedbackItem.id, 'from cycle', reportData.cycleId);
       setReportData(prev =>
         prev ? { ...prev, feedbacks: prev.feedbacks.filter(f => f.id !== feedbackItem.id) } : prev
       );
@@ -276,6 +277,7 @@ function App() {
     setEmployees([]);
     setRoleAssignments([]);
     setSubmittedFeedback([]);
+    setCurrentCycleId(null);
   };
 
   return (
@@ -355,6 +357,7 @@ function App() {
             currentIndex={1}
             totalEvaluees={1}
             raterType={RELATIONSHIP_TYPES.find(t => t.value === currentRaterType)?.label}
+            cycleId={currentCycleId}
           />
         )}
 
@@ -382,8 +385,9 @@ function App() {
             employees={employees}
             roleAssignments={roleAssignments}
             submittedFeedback={submittedFeedback}
+            cycleId={currentCycleId}
             onStartOver={handleStartOver}
-            onNewProject={handleNewProject}
+            onStartNewSurvey={handleStartNewSurvey}
             onDeleteAssignment={handleDeleteAssignment}
             competencies={EMPLOYEE_COMPETENCIES}
             onOpenReport={handleOpenReport}
@@ -396,7 +400,7 @@ function App() {
             feedbacks={reportData.feedbacks}
             competencies={EMPLOYEE_COMPETENCIES}
             onBack={navigationStack.length > 0 ? goBack : null}
-            onDeleteFeedback={handleDeleteFeedback}
+            onDeleteFeedback={reportData.readOnly ? undefined : handleDeleteFeedback}
           />
         )}
 

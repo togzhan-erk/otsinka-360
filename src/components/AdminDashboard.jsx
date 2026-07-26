@@ -1,25 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getArchivedCycles, getCycleFeedback } from '../cycles';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStartOver, onNewProject, onDeleteAssignment, competencies, onOpenReport }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, onStartOver, onStartNewSurvey, onDeleteAssignment, competencies, onOpenReport }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
   const [firestoreError, setFirestoreError] = useState(null);
   const [inviteStatus, setInviteStatus] = useState({});
   const [copiedId, setCopiedId] = useState(null);
+  const [showNewSurveyModal, setShowNewSurveyModal] = useState(false);
 
   useEffect(() => {
+    if (!cycleId) {
+      setLoadingResults(false);
+      return;
+    }
+    setLoadingResults(true);
     const unsubscribe = onSnapshot(
-      collection(db, 'feedback'),
+      collection(db, 'cycles', cycleId, 'feedback'),
       (snapshot) => {
         const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        console.log('[AdminDashboard] Received', data.length, 'feedback docs:', data);
+        console.log('[AdminDashboard] Received', data.length, 'feedback docs for cycle', cycleId);
         setFeedbackList(data);
         setLoadingResults(false);
         setFirestoreError(null);
@@ -31,7 +38,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
       }
     );
     return unsubscribe;
-  }, []);
+  }, [cycleId]);
 
   const getEmployee = (id) => employees.find(e => e.id === id);
 
@@ -42,7 +49,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
     if (!rater || !evaluee) return;
 
     const relationType = assignment.relationType || 'colleague';
-    const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}`;
+    const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}&cycle=${cycleId}`;
 
     console.log('[AdminDashboard] Sending invite to', rater.email, 'link:', link);
     setInviteStatus(prev => ({ ...prev, [assignment.id]: 'sending' }));
@@ -139,12 +146,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
 
   const sentCount = roleAssignments.filter(a => inviteStatus[a.id] === 'sent').length;
 
-  const grouped = feedbackList.reduce((acc, item) => {
-    const key = item.evalueeName || 'Неизвестный';
-    if (!acc[key]) acc[key] = { name: key, feedbacks: [] };
-    acc[key].feedbacks.push(item);
-    return acc;
-  }, {});
+  const grouped = groupFeedbackByEvaluee(feedbackList);
 
   return (
     <div className="container">
@@ -160,6 +162,9 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
           </button>
           <button className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`} onClick={() => setActiveTab('results')}>
             📈 Результаты
+          </button>
+          <button className={`tab-btn ${activeTab === 'archive' ? 'active' : ''}`} onClick={() => setActiveTab('archive')}>
+            🗄 Архив
           </button>
         </div>
 
@@ -220,7 +225,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
 
               const status = inviteStatus[assignment.id] || 'idle';
               const relationType = assignment.relationType || 'colleague';
-              const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}`;
+              const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}&cycle=${cycleId}`;
 
               return (
                 <div
@@ -300,7 +305,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
           </div>
         )}
 
-        {/* ── Results ── */}
+        {/* ── Results (current active cycle) ── */}
         {activeTab === 'results' && (
           <div style={{ marginTop: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -335,22 +340,49 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
                 key={group.name}
                 group={group}
                 onOpenReport={onOpenReport}
+                reportOpts={{ cycleId }}
               />
             ))}
           </div>
         )}
 
+        {/* ── Archive ── */}
+        {activeTab === 'archive' && (
+          <ArchiveTab onOpenReport={onOpenReport} />
+        )}
+
         <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <button onClick={onNewProject} className="btn btn-success" style={{ background: '#ff3b30' }}>
-            + Начать новый проект оценки
+          <button onClick={() => setShowNewSurveyModal(true)} className="btn btn-success" style={{ background: '#ff3b30' }}>
+            + Начать новый опрос
           </button>
           <button onClick={onStartOver} className="btn btn-secondary">
             ← На главную
           </button>
         </div>
       </div>
+
+      {showNewSurveyModal && (
+        <NewSurveyModal
+          onCancel={() => setShowNewSurveyModal(false)}
+          onConfirm={(name) => {
+            setShowNewSurveyModal(false);
+            onStartNewSurvey(name);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function groupFeedbackByEvaluee(feedbackList) {
+  return feedbackList.reduce((acc, item) => {
+    const key = item.evalueeName || 'Неизвестный';
+    if (!acc[key]) acc[key] = { name: key, feedbacks: [] };
+    acc[key].feedbacks.push(item);
+    return acc;
+  }, {});
 }
 
 function pluralizeAnswers(n) {
@@ -361,7 +393,7 @@ function pluralizeAnswers(n) {
   return 'ответов';
 }
 
-function EmployeeResultRow({ group, onOpenReport }) {
+function EmployeeResultRow({ group, onOpenReport, reportOpts }) {
   return (
     <div
       style={{
@@ -386,12 +418,167 @@ function EmployeeResultRow({ group, onOpenReport }) {
       {onOpenReport && (
         <button
           className="btn btn-primary"
-          onClick={() => onOpenReport(group.name, group.feedbacks)}
+          onClick={() => onOpenReport(group.name, group.feedbacks, reportOpts)}
           style={{ whiteSpace: 'nowrap', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}
         >
           📄 Открыть полный отчёт
         </button>
       )}
+    </div>
+  );
+}
+
+// ── New survey modal ─────────────────────────────────────────────────────────
+
+function defaultSurveyName() {
+  const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  return `Опрос от ${today}`;
+}
+
+function NewSurveyModal({ onCancel, onConfirm }) {
+  const [name, setName] = useState(defaultSurveyName());
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
+      }}
+      onClick={onCancel}
+    >
+      <div
+        className="card"
+        style={{ maxWidth: '440px', width: '100%' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ marginTop: 0 }}>Начать новый опрос?</h3>
+        <p style={{ color: 'var(--color-text-muted, #6f6f77)' }}>
+          Текущий опрос будет перемещён в архив, результаты сохранятся.
+        </p>
+        <div className="form-group">
+          <label><strong>Название нового опроса:</strong></label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="input"
+            autoFocus
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
+          <button
+            className="btn btn-success"
+            onClick={() => onConfirm(name.trim() || defaultSurveyName())}
+          >
+            Начать новый опрос
+          </button>
+          <button className="btn btn-secondary" onClick={onCancel}>
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Archive tab ──────────────────────────────────────────────────────────────
+
+function ArchiveTab({ onOpenReport }) {
+  const [cycles, setCycles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [openCycle, setOpenCycle] = useState(null); // { id, name, feedbacks, loading }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getArchivedCycles()
+      .then(list => { if (!cancelled) { setCycles(list); setLoading(false); } })
+      .catch(err => {
+        console.error('[ArchiveTab] Failed to load archived cycles:', err);
+        if (!cancelled) { setError(err.message); setLoading(false); }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleOpenCycle = async (cycle) => {
+    setOpenCycle({ id: cycle.id, name: cycle.name, feedbacks: [], loading: true });
+    try {
+      const feedbacks = await getCycleFeedback(cycle.id);
+      setOpenCycle({ id: cycle.id, name: cycle.name, feedbacks, loading: false });
+    } catch (err) {
+      console.error('[ArchiveTab] Failed to load cycle results:', err);
+      alert('Ошибка загрузки результатов архива: ' + err.message);
+      setOpenCycle(null);
+    }
+  };
+
+  if (openCycle) {
+    const grouped = groupFeedbackByEvaluee(openCycle.feedbacks);
+    return (
+      <div style={{ marginTop: '2rem' }}>
+        <button
+          onClick={() => setOpenCycle(null)}
+          style={{ background: 'none', border: 'none', color: 'var(--color-text-muted, #6f6f77)', cursor: 'pointer', fontSize: '0.9rem', padding: 0, marginBottom: '1.25rem' }}
+        >
+          ← Назад к архиву
+        </button>
+        <h3 style={{ marginTop: 0 }}>{openCycle.name} <span style={{ fontWeight: 400, fontSize: '0.85rem', color: 'var(--color-text-muted, #6f6f77)' }}>(архив, только просмотр)</span></h3>
+
+        {openCycle.loading && <p style={{ color: '#6f6f77' }}>Загрузка результатов...</p>}
+
+        {!openCycle.loading && openCycle.feedbacks.length === 0 && (
+          <p style={{ color: '#6f6f77' }}>В этом опросе нет ответов.</p>
+        )}
+
+        {!openCycle.loading && Object.values(grouped).map(group => (
+          <EmployeeResultRow
+            key={group.name}
+            group={group}
+            onOpenReport={onOpenReport}
+            reportOpts={{ cycleId: openCycle.id, readOnly: true }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: '2rem' }}>
+      <h3 style={{ marginTop: 0 }}>Архив опросов</h3>
+
+      {loading && <p style={{ color: '#6f6f77' }}>Загрузка...</p>}
+
+      {error && <div className="error-message">Ошибка загрузки архива: {error}</div>}
+
+      {!loading && !error && cycles.length === 0 && (
+        <p style={{ color: '#6f6f77' }}>Архив пуст. Здесь появятся опросы после того, как вы начнёте новый.</p>
+      )}
+
+      {!loading && cycles.map(cycle => (
+        <div
+          key={cycle.id}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '1rem 1.25rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+            marginBottom: '0.75rem', background: '#fff', gap: '1rem', flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: '600' }}>{cycle.name}</div>
+            <div style={{ color: 'var(--color-text-muted, #6f6f77)', fontSize: '0.85rem' }}>
+              {cycle.createdAt?.toDate ? cycle.createdAt.toDate().toLocaleDateString('ru-RU') : ''}
+            </div>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => handleOpenCycle(cycle)}
+            style={{ whiteSpace: 'nowrap', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}
+          >
+            Открыть результаты
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

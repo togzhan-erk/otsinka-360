@@ -11,7 +11,7 @@ function BackButton({ onBack }) {
   );
 }
 
-function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, totalEvaluees, raterType }) {
+function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, totalEvaluees, raterType, cycleId }) {
   const [scores, setScores] = useState(
     competencies.reduce((acc, comp) => ({ ...acc, [comp.id]: 3 }), {})
   );
@@ -43,10 +43,10 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, tota
       openQuestions: { strength, improvement },
       submittedAt: serverTimestamp(),
     };
-    console.log('[RaterForm] Writing to Firestore feedback collection:', payload);
+    console.log('[RaterForm] Writing to cycle', cycleId, 'feedback collection:', payload);
 
     try {
-      const docRef = await addDoc(collection(db, 'feedback'), payload);
+      const docRef = await addDoc(collection(db, 'cycles', cycleId, 'feedback'), payload);
       console.log('[RaterForm] Successfully written, doc ID:', docRef.id);
       onSubmit({ competencyScores: scores, openQuestions: { strength, improvement } });
     } catch (err) {
