@@ -6,12 +6,13 @@ import * as XLSX from 'xlsx';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStartOver, onNewProject, onDeleteAssignment, competencies }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStartOver, onNewProject, onDeleteAssignment, competencies, onOpenReport }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
   const [firestoreError, setFirestoreError] = useState(null);
   const [inviteStatus, setInviteStatus] = useState({});
+  const [copiedId, setCopiedId] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -65,6 +66,18 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
     const pending = roleAssignments.filter(a => inviteStatus[a.id] !== 'sent');
     for (const assignment of pending) {
       await handleSendInvite(assignment);
+    }
+  };
+
+  const handleCopyLink = async (assignment, link) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedId(assignment.id);
+      setTimeout(() => {
+        setCopiedId(prev => (prev === assignment.id ? null : prev));
+      }, 2000);
+    } catch (err) {
+      console.error('[AdminDashboard] Clipboard copy error:', err);
     }
   };
 
@@ -245,8 +258,27 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
                     <div style={{ fontWeight: '600', marginBottom: '0.2rem' }}>
                       {rater.name} оценивает {evaluee.name}
                     </div>
-                    <div style={{ fontSize: '0.85rem', color: '#6f6f77' }}>
-                      {rater.email} · <a href={link} target="_blank" rel="noreferrer" style={{ color: '#0071e3' }}>ссылка</a>
+                    <div style={{ fontSize: '0.85rem', color: '#6f6f77', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span>{rater.email} · <a href={link} target="_blank" rel="noreferrer" style={{ color: '#0071e3' }}>ссылка</a></span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink(assignment, link)}
+                        title="Скопировать ссылку"
+                        style={{
+                          background: 'none',
+                          border: '1px solid #e5e5e7',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          padding: '0.15rem 0.55rem',
+                          fontSize: '0.8rem',
+                          color: '#3c3c44',
+                        }}
+                      >
+                        📋 Скопировать ссылку
+                      </button>
+                      {copiedId === assignment.id && (
+                        <span style={{ color: '#34c759', fontSize: '0.8rem', fontWeight: '500' }}>Скопировано ✓</span>
+                      )}
                     </div>
                   </div>
 
@@ -320,6 +352,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
                 group={group}
                 competencies={competencies || []}
                 onDeleteFeedback={handleDeleteFeedback}
+                onOpenReport={onOpenReport}
               />
             ))}
           </div>
@@ -338,7 +371,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
   );
 }
 
-function EmployeeResult({ group, competencies, onDeleteFeedback }) {
+function EmployeeResult({ group, competencies, onDeleteFeedback, onOpenReport }) {
   const avgScores = competencies.map(comp => {
     const vals = group.feedbacks
       .map(f => {
@@ -355,11 +388,24 @@ function EmployeeResult({ group, competencies, onDeleteFeedback }) {
   const improvements = group.feedbacks.map(f => f.openQuestions?.improvement).filter(Boolean);
 
   return (
-    <div style={{ border: '1px solid #e5e5e7', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-      <h4 style={{ marginBottom: '0.25rem' }}>{group.name}</h4>
-      <p style={{ color: '#6f6f77', fontSize: '0.9rem', marginBottom: '1rem' }}>
-        {group.feedbacks.length} {group.feedbacks.length === 1 ? 'оценка' : 'оценок'} · типы: {[...new Set(group.feedbacks.map(f => f.raterType))].join(', ')}
-      </p>
+    <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.5rem', marginBottom: '1.25rem', background: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', gap: '1rem', flexWrap: 'wrap' }}>
+        <div>
+          <h4 style={{ margin: '0 0 0.2rem', color: 'var(--color-primary)' }}>{group.name}</h4>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>
+            {group.feedbacks.length} {group.feedbacks.length === 1 ? 'оценка' : 'оценок'} · {[...new Set(group.feedbacks.map(f => f.raterType))].join(', ')}
+          </p>
+        </div>
+        {onOpenReport && (
+          <button
+            className="btn btn-primary"
+            onClick={() => onOpenReport(group.name, group.feedbacks)}
+            style={{ whiteSpace: 'nowrap', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}
+          >
+            📄 Открыть полный отчёт
+          </button>
+        )}
+      </div>
 
       {avgScores.length > 0 && (
         <div style={{ marginBottom: '1rem' }}>

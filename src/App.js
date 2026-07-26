@@ -6,6 +6,7 @@ import ThankYouScreen from './components/ThankYouScreen';
 import AdminUpload from './components/AdminUpload';
 import RoleAssignment from './components/RoleAssignment';
 import AdminDashboard from './components/AdminDashboard';
+import EmployeeReport from './components/EmployeeReport';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -57,6 +58,7 @@ function App() {
   const [roleAssignments, setRoleAssignments] = useState([]);
   const [submittedFeedback, setSubmittedFeedback] = useState([]);
   const [navigationStack, setNavigationStack] = useState([]);
+  const [reportData, setReportData] = useState(null); // { name, feedbacks }
 
   // On first load: if invite params were captured at module level, load project and open RaterForm.
   useEffect(() => {
@@ -241,6 +243,12 @@ function App() {
     setSubmittedFeedback([]);
   };
 
+  const handleOpenReport = (name, feedbacks) => {
+    pushNav();
+    setReportData({ name, feedbacks });
+    setStage('employeeReport');
+  };
+
   const handleStartOver = () => {
     setNavigationStack([]);
     setUserRole(null);
@@ -360,8 +368,19 @@ function App() {
             onNewProject={handleNewProject}
             onDeleteAssignment={handleDeleteAssignment}
             competencies={EMPLOYEE_COMPETENCIES}
+            onOpenReport={handleOpenReport}
           />
         )}
+
+        {userRole === 'admin' && stage === 'employeeReport' && reportData && (
+          <EmployeeReport
+            employeeName={reportData.name}
+            feedbacks={reportData.feedbacks}
+            competencies={EMPLOYEE_COMPETENCIES}
+            onBack={navigationStack.length > 0 ? goBack : null}
+          />
+        )}
+
       </main>
     </div>
   );
