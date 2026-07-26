@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
@@ -89,22 +89,6 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
     );
     if (!confirmed) return;
     onDeleteAssignment(assignment.id);
-  };
-
-  // ── Feedback deletion ──────────────────────────────────────────────────────
-  const handleDeleteFeedback = async (feedbackItem) => {
-    const confirmed = window.confirm(
-      `Удалить эту оценку?\n\nОцениваемый: ${feedbackItem.evalueeName}\nТип: ${feedbackItem.raterType}\n\nЭто действие необратимо.`
-    );
-    if (!confirmed) return;
-
-    try {
-      await deleteDoc(doc(db, 'feedback', feedbackItem.id));
-      console.log('[AdminDashboard] Deleted feedback doc', feedbackItem.id);
-    } catch (err) {
-      console.error('[AdminDashboard] Failed to delete feedback:', err);
-      alert('Ошибка удаления: ' + err.message);
-    }
   };
 
   // ── Excel export ───────────────────────────────────────────────────────────
@@ -347,11 +331,9 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
             )}
 
             {!loadingResults && Object.values(grouped).map(group => (
-              <EmployeeResult
+              <EmployeeResultRow
                 key={group.name}
                 group={group}
-                competencies={competencies || []}
-                onDeleteFeedback={handleDeleteFeedback}
                 onOpenReport={onOpenReport}
               />
             ))}
@@ -371,110 +353,45 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, onStart
   );
 }
 
-function EmployeeResult({ group, competencies, onDeleteFeedback, onOpenReport }) {
-  const avgScores = competencies.map(comp => {
-    const vals = group.feedbacks
-      .map(f => {
-        const byNum = f.competencyScores?.[comp.id];
-        const byStr = f.competencyScores?.[String(comp.id)];
-        return byNum ?? byStr;
-      })
-      .filter(v => v !== undefined && v !== null);
-    const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-    return { ...comp, avg };
-  });
+function pluralizeAnswers(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'ответ';
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'ответа';
+  return 'ответов';
+}
 
-  const strengths = group.feedbacks.map(f => f.openQuestions?.strength).filter(Boolean);
-  const improvements = group.feedbacks.map(f => f.openQuestions?.improvement).filter(Boolean);
-
+function EmployeeResultRow({ group, onOpenReport }) {
   return (
-    <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.5rem', marginBottom: '1.25rem', background: '#fff' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', gap: '1rem', flexWrap: 'wrap' }}>
-        <div>
-          <h4 style={{ margin: '0 0 0.2rem', color: 'var(--color-primary)' }}>{group.name}</h4>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>
-            {group.feedbacks.length} {group.feedbacks.length === 1 ? 'оценка' : 'оценок'} · {[...new Set(group.feedbacks.map(f => f.raterType))].join(', ')}
-          </p>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '1rem 1.25rem',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-card)',
+        marginBottom: '0.75rem',
+        background: '#fff',
+        gap: '1rem',
+        flexWrap: 'wrap',
+      }}
+    >
+      <div>
+        <div style={{ fontWeight: '600' }}>{group.name}</div>
+        <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+          {group.feedbacks.length} {pluralizeAnswers(group.feedbacks.length)}
         </div>
-        {onOpenReport && (
-          <button
-            className="btn btn-primary"
-            onClick={() => onOpenReport(group.name, group.feedbacks)}
-            style={{ whiteSpace: 'nowrap', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}
-          >
-            📄 Открыть полный отчёт
-          </button>
-        )}
       </div>
-
-      {avgScores.length > 0 && (
-        <div style={{ marginBottom: '1rem' }}>
-          <strong>Средние баллы:</strong>
-          {avgScores.map(comp => (
-            <div key={comp.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: '1px solid #f5f5f7' }}>
-              <span>{comp.name}</span>
-              <span style={{ fontWeight: '600', color: comp.avg === null ? '#c7c7cc' : comp.avg >= 4 ? '#34c759' : comp.avg >= 3 ? '#ff9500' : '#ff3b30' }}>
-                {comp.avg !== null ? comp.avg.toFixed(1) : '—'} / 5
-              </span>
-            </div>
-          ))}
-        </div>
+      {onOpenReport && (
+        <button
+          className="btn btn-primary"
+          onClick={() => onOpenReport(group.name, group.feedbacks)}
+          style={{ whiteSpace: 'nowrap', padding: '0.55rem 1.1rem', fontSize: '0.88rem' }}
+        >
+          📄 Открыть полный отчёт
+        </button>
       )}
-
-      {strengths.length > 0 && (
-        <div style={{ marginBottom: '1rem' }}>
-          <strong>Сильные стороны:</strong>
-          <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
-            {strengths.map((s, i) => <li key={i} style={{ marginBottom: '0.25rem', color: '#3c3c44' }}>{s}</li>)}
-          </ul>
-        </div>
-      )}
-
-      {improvements.length > 0 && (
-        <div style={{ marginBottom: '1rem' }}>
-          <strong>Зоны развития:</strong>
-          <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
-            {improvements.map((s, i) => <li key={i} style={{ marginBottom: '0.25rem', color: '#3c3c44' }}>{s}</li>)}
-          </ul>
-        </div>
-      )}
-
-      <div style={{ marginTop: '1rem', borderTop: '1px solid #f5f5f7', paddingTop: '1rem' }}>
-        <strong style={{ fontSize: '0.9rem', color: '#6f6f77' }}>Отдельные оценки:</strong>
-        {group.feedbacks.map((f, i) => (
-          <div
-            key={f.id}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0.4rem 0.5rem',
-              marginTop: '0.4rem',
-              background: '#f9f9fb',
-              borderRadius: '6px',
-              fontSize: '0.85rem',
-              color: '#6f6f77',
-            }}
-          >
-            <span>Оценка #{i + 1} · {f.raterType}</span>
-            <button
-              onClick={() => onDeleteFeedback(f)}
-              title="Удалить эту оценку"
-              style={{
-                background: 'none',
-                border: '1px solid #e5e5e7',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                padding: '0.2rem 0.45rem',
-                fontSize: '0.85rem',
-                color: '#ff3b30',
-              }}
-            >
-              🗑
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

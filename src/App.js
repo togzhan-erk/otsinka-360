@@ -249,6 +249,24 @@ function App() {
     setStage('employeeReport');
   };
 
+  const handleDeleteFeedback = async (feedbackItem) => {
+    const confirmed = window.confirm(
+      `Удалить эту оценку?\n\nОцениваемый: ${feedbackItem.evalueeName}\nТип: ${feedbackItem.raterType}\n\nЭто действие необратимо.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, 'feedback', feedbackItem.id));
+      console.log('[App] Deleted feedback doc', feedbackItem.id);
+      setReportData(prev =>
+        prev ? { ...prev, feedbacks: prev.feedbacks.filter(f => f.id !== feedbackItem.id) } : prev
+      );
+    } catch (err) {
+      console.error('[App] Failed to delete feedback:', err);
+      alert('Ошибка удаления: ' + err.message);
+    }
+  };
+
   const handleStartOver = () => {
     setNavigationStack([]);
     setUserRole(null);
@@ -378,6 +396,7 @@ function App() {
             feedbacks={reportData.feedbacks}
             competencies={EMPLOYEE_COMPETENCIES}
             onBack={navigationStack.length > 0 ? goBack : null}
+            onDeleteFeedback={handleDeleteFeedback}
           />
         )}
 

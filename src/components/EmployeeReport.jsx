@@ -63,7 +63,7 @@ function SectionTitle({ children }) {
   );
 }
 
-function EmployeeReport({ employeeName, feedbacks, competencies, onBack }) {
+function EmployeeReport({ employeeName, feedbacks, competencies, onBack, onDeleteFeedback }) {
   const reportRef = useRef(null);
 
   // ── Normalize rater types ─────────────────────────────────────────────────
@@ -116,11 +116,13 @@ function EmployeeReport({ employeeName, feedbacks, competencies, onBack }) {
   // ── Comments (anonymized) ─────────────────────────────────────────────────
   const strengthComments = [];
   const improveComments = [];
+  const anonymizedRows = [];
   const typeCounters = {};
   normalizedFeedbacks.forEach(f => {
     const t = f.raterTypeNorm;
     typeCounters[t] = (typeCounters[t] || 0) + 1;
     const label = `${t} #${typeCounters[t]}`;
+    anonymizedRows.push({ id: f.id, label, raw: f });
     if (f.openQuestions?.strength?.trim()) {
       strengthComments.push({ label, text: f.openQuestions.strength });
     }
@@ -347,6 +349,46 @@ function EmployeeReport({ employeeName, feedbacks, competencies, onBack }) {
             Сгенерировано в Оценка 360 · {dateStr}
           </div>
         </div>
+
+        {/* ── Individual answers (management only, excluded from PDF) ────── */}
+        {onDeleteFeedback && anonymizedRows.length > 0 && (
+          <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border)' }}>
+            <strong style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Отдельные оценки:</strong>
+            {anonymizedRows.map(row => (
+              <div
+                key={row.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.4rem 0.6rem',
+                  marginTop: '0.4rem',
+                  background: 'var(--color-surface)',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                <span>{row.label}</span>
+                <button
+                  onClick={() => onDeleteFeedback(row.raw)}
+                  title="Удалить эту оценку"
+                  style={{
+                    background: 'none',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    padding: '0.2rem 0.5rem',
+                    fontSize: '0.85rem',
+                    color: 'var(--color-danger)',
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
