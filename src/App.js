@@ -38,6 +38,7 @@ const INVITE = {
   raterId: _initialParams.get('rater'),
   type: _initialParams.get('type'),
   cycleId: _initialParams.get('cycle'),
+  assignmentId: _initialParams.get('assignment'),
 };
 console.log('[App] URL params captured at module load:', window.location.search, INVITE);
 
@@ -65,6 +66,7 @@ function App() {
   const [navigationStack, setNavigationStack] = useState([]);
   const [reportData, setReportData] = useState(null); // { name, feedbacks, cycleId, readOnly }
   const [currentCycleId, setCurrentCycleId] = useState(null);
+  const [currentAssignmentId, setCurrentAssignmentId] = useState(null);
 
   // On first load: run the one-time legacy-data migration, then if invite
   // params were captured at module level, resolve the right cycle and open RaterForm.
@@ -90,6 +92,7 @@ function App() {
           console.log('[App] Invite resolved successfully:', invite, 'cycle:', cycle.id);
           setEmployees(cycle.employees || []);
           setCurrentCycleId(cycle.id);
+          setCurrentAssignmentId(INVITE.assignmentId || null);
           setCurrentEvaluee(invite.evaluee.name);
           setCurrentRaterType(invite.raterTypeValue);
           setUserRole('rater');
@@ -144,6 +147,7 @@ function App() {
       console.log('[App] Rater flow: loaded active cycle:', cycle);
       setEmployees(cycle?.employees || []);
       setCurrentCycleId(cycle?.id || null);
+      setCurrentAssignmentId(null); // manual entry has no assignment context to link back to
     } catch (err) {
       console.error('[App] Rater flow: error loading employees:', err);
       setEmployees([]);
@@ -278,6 +282,7 @@ function App() {
     setRoleAssignments([]);
     setSubmittedFeedback([]);
     setCurrentCycleId(null);
+    setCurrentAssignmentId(null);
   };
 
   return (
@@ -358,6 +363,7 @@ function App() {
             totalEvaluees={1}
             raterType={RELATIONSHIP_TYPES.find(t => t.value === currentRaterType)?.label}
             cycleId={currentCycleId}
+            assignmentId={currentAssignmentId}
           />
         )}
 

@@ -47,6 +47,32 @@ export async function archiveCycle(cycleId) {
   await setDoc(doc(db, 'cycles', cycleId), { status: 'archived' }, { merge: true });
 }
 
+// Writes a feedback doc and, if assignmentId is given, flags that one
+// assignment as completed in the same transaction. The feedback payload
+// itself is untouched (no rater identity in it) — completion is tracked
+// purely on the roleAssignments array, which is how anonymity is kept
+// even though admins can see who has/hasn't responded.
+export async function submitFeedback(cycleId, assignmentId, feedbackPayload) {
+  const cycleRef = doc(db, 'cycles', cycleId);
+  const feedbackRef = doc(collection(db, 'cycles', cycleId, 'feedback'));
+  await runTransaction(db, async (tx) => {
+    if (assignmentId) {
+      const cycleSnap = await tx.get(cycleRef);
+      if (cycleSnap.exists()) {
+        const assignments = cycleSnap.data().roleAssignments || [];
+        const updated = assignments.map(a =>
+          String(a.id) === String(assignmentId)
+            ? { ...a, completed: true, completedAt: new Date() }
+            : a
+        );
+        tx.set(cycleRef, { roleAssignments: updated }, { merge: true });
+      }
+    }
+    tx.set(feedbackRef, feedbackPayload);
+  });
+  return feedbackRef.id;
+}
+
 export async function createCycle(name) {
   const ref = doc(collection(db, 'cycles'));
   await setDoc(ref, {

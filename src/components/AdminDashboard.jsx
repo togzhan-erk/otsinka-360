@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getArchivedCycles, getCycleFeedback } from '../cycles';
 import emailjs from '@emailjs/browser';
@@ -15,6 +15,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const [inviteStatus, setInviteStatus] = useState({});
   const [copiedId, setCopiedId] = useState(null);
   const [showNewSurveyModal, setShowNewSurveyModal] = useState(false);
+  const [liveRoleAssignments, setLiveRoleAssignments] = useState(null);
 
   useEffect(() => {
     if (!cycleId) {
@@ -40,28 +41,54 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
     return unsubscribe;
   }, [cycleId]);
 
+  // Live-subscribed so "прошёл/не прошёл" status updates as raters submit,
+  // without the admin needing to reload the dashboard.
+  useEffect(() => {
+    if (!cycleId) {
+      setLiveRoleAssignments(null);
+      return;
+    }
+    const unsubscribe = onSnapshot(doc(db, 'cycles', cycleId), (snap) => {
+      if (snap.exists()) setLiveRoleAssignments(snap.data().roleAssignments || []);
+    });
+    return unsubscribe;
+  }, [cycleId]);
+
+  const effectiveAssignments = liveRoleAssignments ?? roleAssignments;
+
   const getEmployee = (id) => employees.find(e => e.id === id);
 
   // ── Invitations ────────────────────────────────────────────────────────────
-  const handleSendInvite = async (assignment) => {
+  const buildInviteLink = (assignment) => {
+    const relationType = assignment.relationType || 'colleague';
+    return `${BASE_URL}/?evaluee=${assignment.evalueeId}&rater=${assignment.raterId}&type=${relationType}&cycle=${cycleId}&assignment=${assignment.id}`;
+  };
+
+  const handleSendInvite = async (assignment, { isReminder = false } = {}) => {
     const rater = getEmployee(assignment.raterId);
     const evaluee = getEmployee(assignment.evalueeId);
     if (!rater || !evaluee) return;
 
-    const relationType = assignment.relationType || 'colleague';
-    const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}&cycle=${cycleId}`;
+    const link = buildInviteLink(assignment);
+    const templateParams = { link, to_email: rater.email, to_name: rater.name, evaluee_name: evaluee.name };
+    if (isReminder) {
+      // Extra params are harmless if the current EmailJS template doesn't
+      // reference them yet — it just sends the same invite text either way.
+      templateParams.reminder_message = 'Напоминаем: пожалуйста, пройдите оценку по ссылке ниже.';
+      templateParams.is_reminder = 'true';
+    }
 
-    console.log('[AdminDashboard] Sending invite to', rater.email, 'link:', link);
+    console.log('[AdminDashboard] Sending', isReminder ? 'reminder' : 'invite', 'to', rater.email, 'link:', link);
     setInviteStatus(prev => ({ ...prev, [assignment.id]: 'sending' }));
 
     try {
       await emailjs.send(
         process.env.REACT_APP_EMAILJS_SERVICE_ID,
         process.env.REACT_APP_EMAILJS_TEMPLATE_ID,
-        { link, to_email: rater.email, to_name: rater.name, evaluee_name: evaluee.name },
+        templateParams,
         process.env.REACT_APP_EMAILJS_PUBLIC_KEY
       );
-      console.log('[AdminDashboard] Invite sent to', rater.email);
+      console.log('[AdminDashboard] Sent to', rater.email);
       setInviteStatus(prev => ({ ...prev, [assignment.id]: 'sent' }));
     } catch (err) {
       console.error('[AdminDashboard] EmailJS error:', err);
@@ -70,9 +97,16 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   };
 
   const handleSendAll = async () => {
-    const pending = roleAssignments.filter(a => inviteStatus[a.id] !== 'sent');
+    const pending = effectiveAssignments.filter(a => inviteStatus[a.id] !== 'sent');
     for (const assignment of pending) {
       await handleSendInvite(assignment);
+    }
+  };
+
+  const handleRemindAllPending = async () => {
+    const pending = effectiveAssignments.filter(a => !a.completed);
+    for (const assignment of pending) {
+      await handleSendInvite(assignment, { isReminder: true });
     }
   };
 
@@ -144,7 +178,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
     XLSX.writeFile(wb, `Оценка360_результаты_${today}.xlsx`);
   };
 
-  const sentCount = roleAssignments.filter(a => inviteStatus[a.id] === 'sent').length;
+  const sentCount = effectiveAssignments.filter(a => inviteStatus[a.id] === 'sent').length;
+  const completedCount = effectiveAssignments.filter(a => a.completed).length;
+  const totalAssignments = effectiveAssignments.length;
+  const completionPct = totalAssignments > 0 ? Math.round((completedCount / totalAssignments) * 100) : 0;
+  const pendingCount = totalAssignments - completedCount;
 
   const grouped = groupFeedbackByEvaluee(feedbackList);
 
@@ -158,7 +196,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
             📊 Обзор
           </button>
           <button className={`tab-btn ${activeTab === 'invitations' ? 'active' : ''}`} onClick={() => setActiveTab('invitations')}>
-            ✉️ Приглашения {sentCount > 0 && `(${sentCount}/${roleAssignments.length})`}
+            ✉️ Приглашения {sentCount > 0 && `(${sentCount}/${totalAssignments})`}
           </button>
           <button className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`} onClick={() => setActiveTab('results')}>
             📈 Результаты
@@ -177,7 +215,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                 <div className="stat-label">Участников</div>
               </div>
               <div className="stat-card">
-                <div className="stat-number">{roleAssignments.length}</div>
+                <div className="stat-number">{totalAssignments}</div>
                 <div className="stat-label">Оценок назначено</div>
               </div>
               <div className="stat-card">
@@ -201,31 +239,42 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         {/* ── Invitations ── */}
         {activeTab === 'invitations' && (
           <div style={{ marginTop: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            {totalAssignments > 0 && (
+              <ProgressWidget completed={completedCount} total={totalAssignments} pct={completionPct} />
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <h3 style={{ margin: 0 }}>Приглашения на оценку</h3>
-              {roleAssignments.length > 0 && (
-                <button
-                  className="btn btn-success"
-                  onClick={handleSendAll}
-                  disabled={roleAssignments.every(a => inviteStatus[a.id] === 'sent')}
-                >
-                  Отправить все
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {pendingCount > 0 && (
+                  <button className="btn btn-secondary" onClick={handleRemindAllPending}>
+                    🔔 Напомнить всем непрошедшим ({pendingCount})
+                  </button>
+                )}
+                {totalAssignments > 0 && (
+                  <button
+                    className="btn btn-success"
+                    onClick={handleSendAll}
+                    disabled={effectiveAssignments.every(a => inviteStatus[a.id] === 'sent')}
+                  >
+                    Отправить все
+                  </button>
+                )}
+              </div>
             </div>
 
-            {roleAssignments.length === 0 && (
+            {totalAssignments === 0 && (
               <p style={{ color: '#6f6f77' }}>Назначений нет. Вернитесь на главную и создайте проект с назначениями.</p>
             )}
 
-            {roleAssignments.map(assignment => {
+            {effectiveAssignments.map(assignment => {
               const rater = getEmployee(assignment.raterId);
               const evaluee = getEmployee(assignment.evalueeId);
               if (!rater || !evaluee) return null;
 
               const status = inviteStatus[assignment.id] || 'idle';
-              const relationType = assignment.relationType || 'colleague';
-              const link = `${BASE_URL}/?evaluee=${evaluee.id}&rater=${rater.id}&type=${relationType}&cycle=${cycleId}`;
+              const link = buildInviteLink(assignment);
+              const completed = !!assignment.completed;
 
               return (
                 <div
@@ -235,10 +284,10 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '1rem',
-                    border: '1px solid #e5e5e7',
+                    border: completed ? '1px solid #e5e5e7' : '1px solid #f2c4b8',
                     borderRadius: '8px',
                     marginBottom: '0.75rem',
-                    background: status === 'sent' ? '#f0fdf4' : 'white',
+                    background: completed ? '#f0fdf4' : '#fff8f6',
                     flexWrap: 'wrap',
                     gap: '0.75rem',
                   }}
@@ -271,9 +320,14 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {status === 'sent' && <span style={{ color: '#34c759', fontSize: '0.9rem', fontWeight: '500' }}>✓ Отправлено</span>}
-                    {status === 'error' && <span style={{ color: '#ff3b30', fontSize: '0.9rem' }}>Ошибка</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {completed ? (
+                      <span style={{ color: '#34c759', fontSize: '0.9rem', fontWeight: '600' }}>Прошёл ✓</span>
+                    ) : (
+                      <span style={{ color: '#ff3b30', fontSize: '0.9rem', fontWeight: '600' }}>Не прошёл</span>
+                    )}
+                    {status === 'sent' && <span style={{ color: '#34c759', fontSize: '0.85rem' }}>· письмо отправлено</span>}
+                    {status === 'error' && <span style={{ color: '#ff3b30', fontSize: '0.85rem' }}>· ошибка отправки</span>}
                     <button
                       className="btn btn-success"
                       onClick={() => handleSendInvite(assignment)}
@@ -282,6 +336,25 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                     >
                       {status === 'sending' ? 'Отправка...' : status === 'sent' ? 'Отправить снова' : 'Отправить'}
                     </button>
+                    {!completed && (
+                      <button
+                        onClick={() => handleSendInvite(assignment, { isReminder: true })}
+                        disabled={status === 'sending'}
+                        title="Повторно отправить ссылку с напоминанием"
+                        style={{
+                          background: 'none',
+                          border: '1px solid var(--color-accent)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          padding: '0.4rem 0.8rem',
+                          fontSize: '0.9rem',
+                          color: 'var(--color-accent)',
+                          opacity: status === 'sending' ? 0.6 : 1,
+                        }}
+                      >
+                        🔔 Напомнить
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDeleteAssignmentClick(assignment)}
                       title="Удалить назначение"
@@ -383,6 +456,27 @@ function groupFeedbackByEvaluee(feedbackList) {
     acc[key].feedbacks.push(item);
     return acc;
   }, {});
+}
+
+function ProgressWidget({ completed, total, pct }) {
+  return (
+    <div style={{ marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+        <strong>Пройдено: {completed} из {total} ({pct}%)</strong>
+      </div>
+      <div style={{ background: 'var(--color-border)', borderRadius: 999, height: 10, overflow: 'hidden' }}>
+        <div
+          style={{
+            width: `${pct}%`,
+            height: '100%',
+            borderRadius: 999,
+            background: pct === 100 ? 'var(--color-success)' : 'var(--color-accent)',
+            transition: 'width 0.3s ease',
+          }}
+        />
+      </div>
+    </div>
+  );
 }
 
 function pluralizeAnswers(n) {
