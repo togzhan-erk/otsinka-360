@@ -3,12 +3,14 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getArchivedCycles, getCycleFeedback } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
+import AdminUpload from './AdminUpload';
+import RoleAssignment from './RoleAssignment';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, onStartOver, onStartNewSurvey, onDeleteAssignment, onOpenReport }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, onStartOver, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
@@ -17,6 +19,8 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const [copiedId, setCopiedId] = useState(null);
   const [showNewSurveyModal, setShowNewSurveyModal] = useState(false);
   const [liveRoleAssignments, setLiveRoleAssignments] = useState(null);
+  const [liveCycleName, setLiveCycleName] = useState(null);
+  const [setupUploadedEmployees, setSetupUploadedEmployees] = useState(null);
 
   useEffect(() => {
     if (!cycleId) {
@@ -42,15 +46,20 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
     return unsubscribe;
   }, [cycleId]);
 
-  // Live-subscribed so "прошёл/не прошёл" status updates as raters submit,
-  // without the admin needing to reload the dashboard.
+  // Live-subscribed so "прошёл/не прошёл" status (and the cycle name) update
+  // as raters submit, without the admin needing to reload the dashboard.
   useEffect(() => {
     if (!cycleId) {
       setLiveRoleAssignments(null);
+      setLiveCycleName(null);
       return;
     }
     const unsubscribe = onSnapshot(doc(db, 'cycles', cycleId), (snap) => {
-      if (snap.exists()) setLiveRoleAssignments(snap.data().roleAssignments || []);
+      if (snap.exists()) {
+        const data = snap.data();
+        setLiveRoleAssignments(data.roleAssignments || []);
+        setLiveCycleName(data.name || '');
+      }
     });
     return unsubscribe;
   }, [cycleId]);
@@ -190,17 +199,38 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const totalAssignments = effectiveAssignments.length;
   const completionPct = totalAssignments > 0 ? Math.round((completedCount / totalAssignments) * 100) : 0;
   const pendingCount = totalAssignments - completedCount;
+  const cycleName = liveCycleName ?? '';
+  const hasEmployees = employees.length > 0;
 
   const grouped = groupFeedbackByEvaluee(feedbackList);
+
+  const goToSetup = () => setActiveTab('setup');
 
   return (
     <div className="container">
       <div className="card">
-        <h2>Панель администратора</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Панель администратора</h2>
+            {cycleName && (
+              <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)' }}>{cycleName}</p>
+            )}
+          </div>
+          <button
+            onClick={() => setShowNewSurveyModal(true)}
+            className="btn btn-success"
+            style={{ background: '#ff3b30' }}
+          >
+            + Новый опрос
+          </button>
+        </div>
 
-        <div className="admin-tabs">
+        <div className="admin-tabs" style={{ marginTop: '1.5rem' }}>
           <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
             📊 Обзор
+          </button>
+          <button className={`tab-btn ${activeTab === 'setup' ? 'active' : ''}`} onClick={() => setActiveTab('setup')}>
+            ⚙️ Настройка
           </button>
           <button className={`tab-btn ${activeTab === 'invitations' ? 'active' : ''}`} onClick={() => setActiveTab('invitations')}>
             ✉️ Приглашения {sentCount > 0 && `(${sentCount}/${totalAssignments})`}
@@ -216,213 +246,248 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         {/* ── Overview ── */}
         {activeTab === 'overview' && (
           <div style={{ marginTop: '2rem' }}>
-            <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-number">{employees.length}</div>
-                <div className="stat-label">Участников</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-number">{totalAssignments}</div>
-                <div className="stat-label">Оценок назначено</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-number">{feedbackList.length}</div>
-                <div className="stat-label">Получено ответов</div>
-              </div>
-            </div>
-            {employees.length > 0 && (
-              <div style={{ marginTop: '1.5rem' }}>
-                <h4>Сотрудники в проекте:</h4>
-                <ul style={{ paddingLeft: '1.5rem', color: '#3c3c44' }}>
-                  {employees.map(emp => (
-                    <li key={emp.id}>{emp.name} — {emp.email}</li>
-                  ))}
-                </ul>
-              </div>
+            {!hasEmployees ? (
+              <EmptyCycleNotice onGoToSetup={goToSetup} />
+            ) : (
+              <>
+                {totalAssignments > 0 && (
+                  <ProgressWidget completed={completedCount} total={totalAssignments} pct={completionPct} />
+                )}
+                <div className="stats-grid">
+                  <div className="stat-card">
+                    <div className="stat-number">{employees.length}</div>
+                    <div className="stat-label">Участников</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-number">{totalAssignments}</div>
+                    <div className="stat-label">Оценок назначено</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-number">{feedbackList.length}</div>
+                    <div className="stat-label">Получено ответов</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: '1.5rem' }}>
+                  <h4>Сотрудники в проекте:</h4>
+                  <ul style={{ paddingLeft: '1.5rem', color: '#3c3c44' }}>
+                    {employees.map(emp => (
+                      <li key={emp.id}>{emp.name} — {emp.email}</li>
+                    ))}
+                  </ul>
+                </div>
+              </>
             )}
           </div>
+        )}
+
+        {/* ── Setup (upload employees + assign raters + tracks) ── */}
+        {activeTab === 'setup' && (
+          <SetupTab
+            employees={employees}
+            roleAssignments={effectiveAssignments}
+            uploadedEmployees={setupUploadedEmployees}
+            onUpload={(emps) => setSetupUploadedEmployees(emps)}
+            onBackToUpload={() => setSetupUploadedEmployees(null)}
+            onAssignmentComplete={(assignments, employeesWithTracks) => {
+              setSetupUploadedEmployees(null);
+              onSetupComplete(assignments, employeesWithTracks);
+              setActiveTab('overview');
+            }}
+          />
         )}
 
         {/* ── Invitations ── */}
         {activeTab === 'invitations' && (
           <div style={{ marginTop: '2rem' }}>
-            {totalAssignments > 0 && (
-              <ProgressWidget completed={completedCount} total={totalAssignments} pct={completionPct} />
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <h3 style={{ margin: 0 }}>Приглашения на оценку</h3>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {pendingCount > 0 && (
-                  <button className="btn btn-secondary" onClick={handleRemindAllPending}>
-                    🔔 Напомнить всем непрошедшим ({pendingCount})
-                  </button>
-                )}
+            {!hasEmployees ? (
+              <EmptyCycleNotice onGoToSetup={goToSetup} />
+            ) : (
+              <>
                 {totalAssignments > 0 && (
-                  <button
-                    className="btn btn-success"
-                    onClick={handleSendAll}
-                    disabled={effectiveAssignments.every(a => inviteStatus[a.id] === 'sent')}
-                  >
-                    Отправить все
-                  </button>
+                  <ProgressWidget completed={completedCount} total={totalAssignments} pct={completionPct} />
                 )}
-              </div>
-            </div>
 
-            {totalAssignments === 0 && (
-              <p style={{ color: '#6f6f77' }}>Назначений нет. Вернитесь на главную и создайте проект с назначениями.</p>
-            )}
-
-            {effectiveAssignments.map(assignment => {
-              const rater = getEmployee(assignment.raterId);
-              const evaluee = getEmployee(assignment.evalueeId);
-              if (!rater || !evaluee) return null;
-
-              const status = inviteStatus[assignment.id] || 'idle';
-              const link = buildInviteLink(assignment);
-              const completed = !!assignment.completed;
-
-              return (
-                <div
-                  key={assignment.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '1rem',
-                    border: completed ? '1px solid #e5e5e7' : '1px solid #f2c4b8',
-                    borderRadius: '8px',
-                    marginBottom: '0.75rem',
-                    background: completed ? '#f0fdf4' : '#fff8f6',
-                    flexWrap: 'wrap',
-                    gap: '0.75rem',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: '600', marginBottom: '0.2rem' }}>
-                      {rater.name} оценивает {evaluee.name}
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: '#6f6f77', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <span>{rater.email} · <a href={link} target="_blank" rel="noreferrer" style={{ color: '#0071e3' }}>ссылка</a></span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(assignment, link)}
-                        title="Скопировать ссылку"
-                        style={{
-                          background: 'none',
-                          border: '1px solid #e5e5e7',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          padding: '0.15rem 0.55rem',
-                          fontSize: '0.8rem',
-                          color: '#3c3c44',
-                        }}
-                      >
-                        📋 Скопировать ссылку
-                      </button>
-                      {copiedId === assignment.id && (
-                        <span style={{ color: '#34c759', fontSize: '0.8rem', fontWeight: '500' }}>Скопировано ✓</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {completed ? (
-                      <span style={{ color: '#34c759', fontSize: '0.9rem', fontWeight: '600' }}>Прошёл ✓</span>
-                    ) : (
-                      <span style={{ color: '#ff3b30', fontSize: '0.9rem', fontWeight: '600' }}>Не прошёл</span>
-                    )}
-                    {status === 'sent' && <span style={{ color: '#34c759', fontSize: '0.85rem' }}>· письмо отправлено</span>}
-                    {status === 'error' && <span style={{ color: '#ff3b30', fontSize: '0.85rem' }}>· ошибка отправки</span>}
-                    <button
-                      className="btn btn-success"
-                      onClick={() => handleSendInvite(assignment)}
-                      disabled={status === 'sending'}
-                      style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', opacity: status === 'sending' ? 0.6 : 1 }}
-                    >
-                      {status === 'sending' ? 'Отправка...' : status === 'sent' ? 'Отправить снова' : 'Отправить'}
-                    </button>
-                    {!completed && (
-                      <button
-                        onClick={() => handleSendInvite(assignment, { isReminder: true })}
-                        disabled={status === 'sending'}
-                        title="Повторно отправить ссылку с напоминанием"
-                        style={{
-                          background: 'none',
-                          border: '1px solid var(--color-accent)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          padding: '0.4rem 0.8rem',
-                          fontSize: '0.9rem',
-                          color: 'var(--color-accent)',
-                          opacity: status === 'sending' ? 0.6 : 1,
-                        }}
-                      >
-                        🔔 Напомнить
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <h3 style={{ margin: 0 }}>Приглашения на оценку</h3>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    {pendingCount > 0 && (
+                      <button className="btn btn-secondary" onClick={handleRemindAllPending}>
+                        🔔 Напомнить всем непрошедшим ({pendingCount})
                       </button>
                     )}
-                    <button
-                      onClick={() => handleDeleteAssignmentClick(assignment)}
-                      title="Удалить назначение"
-                      style={{
-                        background: 'none',
-                        border: '1px solid #e5e5e7',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        padding: '0.4rem 0.6rem',
-                        fontSize: '1rem',
-                        color: '#ff3b30',
-                        lineHeight: 1,
-                      }}
-                    >
-                      🗑
-                    </button>
+                    {totalAssignments > 0 && (
+                      <button
+                        className="btn btn-success"
+                        onClick={handleSendAll}
+                        disabled={effectiveAssignments.every(a => inviteStatus[a.id] === 'sent')}
+                      >
+                        Отправить все
+                      </button>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+
+                {totalAssignments === 0 && (
+                  <p style={{ color: '#6f6f77' }}>Назначений нет. Перейдите во вкладку «Настройка» и создайте назначения.</p>
+                )}
+
+                {effectiveAssignments.map(assignment => {
+                  const rater = getEmployee(assignment.raterId);
+                  const evaluee = getEmployee(assignment.evalueeId);
+                  if (!rater || !evaluee) return null;
+
+                  const status = inviteStatus[assignment.id] || 'idle';
+                  const link = buildInviteLink(assignment);
+                  const completed = !!assignment.completed;
+
+                  return (
+                    <div
+                      key={assignment.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '1rem',
+                        border: completed ? '1px solid #e5e5e7' : '1px solid #f2c4b8',
+                        borderRadius: '8px',
+                        marginBottom: '0.75rem',
+                        background: completed ? '#f0fdf4' : '#fff8f6',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '600', marginBottom: '0.2rem' }}>
+                          {rater.name} оценивает {evaluee.name}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#6f6f77', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span>{rater.email} · <a href={link} target="_blank" rel="noreferrer" style={{ color: '#0071e3' }}>ссылка</a></span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(assignment, link)}
+                            title="Скопировать ссылку"
+                            style={{
+                              background: 'none',
+                              border: '1px solid #e5e5e7',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              padding: '0.15rem 0.55rem',
+                              fontSize: '0.8rem',
+                              color: '#3c3c44',
+                            }}
+                          >
+                            📋 Скопировать ссылку
+                          </button>
+                          {copiedId === assignment.id && (
+                            <span style={{ color: '#34c759', fontSize: '0.8rem', fontWeight: '500' }}>Скопировано ✓</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {completed ? (
+                          <span style={{ color: '#34c759', fontSize: '0.9rem', fontWeight: '600' }}>Прошёл ✓</span>
+                        ) : (
+                          <span style={{ color: '#ff3b30', fontSize: '0.9rem', fontWeight: '600' }}>Не прошёл</span>
+                        )}
+                        {status === 'sent' && <span style={{ color: '#34c759', fontSize: '0.85rem' }}>· письмо отправлено</span>}
+                        {status === 'error' && <span style={{ color: '#ff3b30', fontSize: '0.85rem' }}>· ошибка отправки</span>}
+                        <button
+                          className="btn btn-success"
+                          onClick={() => handleSendInvite(assignment)}
+                          disabled={status === 'sending'}
+                          style={{ padding: '0.4rem 1rem', fontSize: '0.9rem', opacity: status === 'sending' ? 0.6 : 1 }}
+                        >
+                          {status === 'sending' ? 'Отправка...' : status === 'sent' ? 'Отправить снова' : 'Отправить'}
+                        </button>
+                        {!completed && (
+                          <button
+                            onClick={() => handleSendInvite(assignment, { isReminder: true })}
+                            disabled={status === 'sending'}
+                            title="Повторно отправить ссылку с напоминанием"
+                            style={{
+                              background: 'none',
+                              border: '1px solid var(--color-accent)',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              padding: '0.4rem 0.8rem',
+                              fontSize: '0.9rem',
+                              color: 'var(--color-accent)',
+                              opacity: status === 'sending' ? 0.6 : 1,
+                            }}
+                          >
+                            🔔 Напомнить
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteAssignmentClick(assignment)}
+                          title="Удалить назначение"
+                          style={{
+                            background: 'none',
+                            border: '1px solid #e5e5e7',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            padding: '0.4rem 0.6rem',
+                            fontSize: '1rem',
+                            color: '#ff3b30',
+                            lineHeight: 1,
+                          }}
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
 
         {/* ── Results (current active cycle) ── */}
         {activeTab === 'results' && (
           <div style={{ marginTop: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0 }}>Результаты оценок</h3>
-              {feedbackList.length > 0 && (
-                <button className="btn btn-success" onClick={handleExportExcel}>
-                  ⬇ Скачать в Excel
-                </button>
-              )}
-            </div>
+            {!hasEmployees ? (
+              <EmptyCycleNotice onGoToSetup={goToSetup} />
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ margin: 0 }}>Результаты оценок</h3>
+                  {feedbackList.length > 0 && (
+                    <button className="btn btn-success" onClick={handleExportExcel}>
+                      ⬇ Скачать в Excel
+                    </button>
+                  )}
+                </div>
 
-            {loadingResults && <p style={{ color: '#6f6f77' }}>Загрузка из Firestore...</p>}
+                {loadingResults && <p style={{ color: '#6f6f77' }}>Загрузка из Firestore...</p>}
 
-            {firestoreError && (
-              <div className="error-message">
-                Ошибка чтения из Firestore: {firestoreError}
-                <br />
-                <small>Проверьте правила безопасности в Firebase Console → Firestore → Rules</small>
-              </div>
+                {firestoreError && (
+                  <div className="error-message">
+                    Ошибка чтения из Firestore: {firestoreError}
+                    <br />
+                    <small>Проверьте правила безопасности в Firebase Console → Firestore → Rules</small>
+                  </div>
+                )}
+
+                {!loadingResults && !firestoreError && feedbackList.length === 0 && (
+                  <p style={{ color: '#6f6f77' }}>
+                    Оценок пока нет. Они появятся здесь после того, как участники заполнят форму.
+                    <br />
+                    <small>Если вы только что отправили оценку — откройте DevTools (F12) → Console и проверьте логи.</small>
+                  </p>
+                )}
+
+                {!loadingResults && Object.values(grouped).map(group => (
+                  <EmployeeResultRow
+                    key={group.name}
+                    group={group}
+                    onOpenReport={onOpenReport}
+                    reportOpts={{ cycleId, track: getEmployeeTrack(employees, group.name) }}
+                  />
+                ))}
+              </>
             )}
-
-            {!loadingResults && !firestoreError && feedbackList.length === 0 && (
-              <p style={{ color: '#6f6f77' }}>
-                Оценок пока нет. Они появятся здесь после того, как участники заполнят форму.
-                <br />
-                <small>Если вы только что отправили оценку — откройте DevTools (F12) → Console и проверьте логи.</small>
-              </p>
-            )}
-
-            {!loadingResults && Object.values(grouped).map(group => (
-              <EmployeeResultRow
-                key={group.name}
-                group={group}
-                onOpenReport={onOpenReport}
-                reportOpts={{ cycleId, track: getEmployeeTrack(employees, group.name) }}
-              />
-            ))}
           </div>
         )}
 
@@ -432,9 +497,6 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         )}
 
         <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <button onClick={() => setShowNewSurveyModal(true)} className="btn btn-success" style={{ background: '#ff3b30' }}>
-            + Начать новый опрос
-          </button>
           <button onClick={onStartOver} className="btn btn-secondary">
             ← На главную
           </button>
@@ -447,6 +509,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           onConfirm={(name) => {
             setShowNewSurveyModal(false);
             onStartNewSurvey(name);
+            setActiveTab('setup');
           }}
         />
       )}
@@ -470,6 +533,22 @@ function groupFeedbackByEvaluee(feedbackList) {
 // employee's track is looked up by name against that cycle's employee list.
 function getEmployeeTrack(employees, evalueeName) {
   return employees.find(e => e.name === evalueeName)?.track || DEFAULT_TRACK;
+}
+
+function EmptyCycleNotice({ onGoToSetup }) {
+  return (
+    <div style={{
+      marginTop: '1rem', padding: '2.5rem 1.5rem', textAlign: 'center',
+      border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-card)',
+    }}>
+      <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.25rem' }}>
+        Пока нет данных. Перейдите во вкладку «Настройка» и загрузите список сотрудников.
+      </p>
+      <button className="btn btn-primary" onClick={onGoToSetup}>
+        ⚙️ Перейти в «Настройку»
+      </button>
+    </div>
+  );
 }
 
 function ProgressWidget({ completed, total, pct }) {
@@ -532,6 +611,49 @@ function EmployeeResultRow({ group, onOpenReport, reportOpts }) {
           📄 Открыть полный отчёт
         </button>
       )}
+    </div>
+  );
+}
+
+// ── Setup tab (upload employees → assign raters + tracks) ──────────────────
+//
+// Reuses AdminUpload/RoleAssignment exactly as they are — this only decides
+// which of the two to show and where the result goes. Once the active cycle
+// already has employees, re-running the wizard is not offered here (it would
+// silently wipe already-sent invites); admins use "+ Новый опрос" instead.
+
+function SetupTab({ employees, roleAssignments, uploadedEmployees, onUpload, onBackToUpload, onAssignmentComplete }) {
+  if (uploadedEmployees) {
+    return (
+      <div style={{ marginTop: '1.5rem' }}>
+        <RoleAssignment
+          employees={uploadedEmployees}
+          onComplete={onAssignmentComplete}
+          onBack={onBackToUpload}
+        />
+      </div>
+    );
+  }
+
+  if (employees.length === 0) {
+    return (
+      <div style={{ marginTop: '1.5rem' }}>
+        <AdminUpload onUpload={onUpload} onBack={null} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: '2rem' }}>
+      <h3 style={{ marginTop: 0 }}>Опрос уже настроен</h3>
+      <p style={{ color: 'var(--color-text-muted)' }}>
+        Сотрудников: {employees.length}, назначений: {roleAssignments.length}.
+      </p>
+      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+        Чтобы изменить отдельные назначения — используйте вкладку «Приглашения».
+        Чтобы полностью загрузить новый список — начните новый опрос кнопкой «+ Новый опрос» вверху страницы
+        (текущий опрос и все его ответы сохранятся в архиве).
+      </p>
     </div>
   );
 }

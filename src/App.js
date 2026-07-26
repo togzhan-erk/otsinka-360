@@ -3,8 +3,6 @@ import './App.css';
 import RoleSelector from './components/RoleSelector';
 import RaterForm from './components/RaterForm';
 import ThankYouScreen from './components/ThankYouScreen';
-import AdminUpload from './components/AdminUpload';
-import RoleAssignment from './components/RoleAssignment';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeReport from './components/EmployeeReport';
 import { db } from './firebase';
@@ -178,31 +176,24 @@ function App() {
     try {
       await migrateLegacyDataIfNeeded();
       await migrateEmployeeTracksIfNeeded();
+    } catch (err) {
+      console.error('[App] Admin flow: migration check failed:', err);
+    }
+    try {
       const cycle = await getActiveCycle();
       console.log('[App] Admin flow: active cycle:', cycle);
       setCurrentCycleId(cycle?.id || null);
-      if (cycle && (cycle.roleAssignments || []).length > 0) {
-        setEmployees(cycle.employees || []);
-        setRoleAssignments(cycle.roleAssignments || []);
-        setStage('adminDashboard');
-      } else {
-        console.log('[App] Admin flow: active cycle has no assignments yet, starting setup');
-        setEmployees(cycle?.employees || []);
-        setStage('adminUpload');
-      }
+      setEmployees(cycle?.employees || []);
+      setRoleAssignments(cycle?.roleAssignments || []);
     } catch (err) {
-      console.error('[App] Admin flow: error checking active cycle:', err);
-      setStage('adminUpload');
+      console.error('[App] Admin flow: error loading active cycle:', err);
     }
+    // The dashboard shell renders regardless of whether the active cycle has
+    // data yet — its tabs show their own empty states when it doesn't.
+    setStage('adminDashboard');
   };
 
-  const handleAdminUploadFile = (employeesData) => {
-    pushNav();
-    setEmployees(employeesData);
-    setStage('roleAssignment');
-  };
-
-  const handleRoleAssignmentComplete = async (assignments, uploadedEmployees) => {
+  const handleSetupComplete = async (assignments, uploadedEmployees) => {
     const employeesToSave = uploadedEmployees || employees;
     setEmployees(employeesToSave);
     setRoleAssignments(assignments);
@@ -213,8 +204,6 @@ function App() {
     } catch (err) {
       console.error('[App] Admin flow: failed to save cycle:', err);
     }
-    setNavigationStack([]);
-    setStage('adminDashboard');
   };
 
   const handleDeleteAssignment = async (assignmentId) => {
@@ -238,8 +227,6 @@ function App() {
       setCurrentCycleId(newId);
       setEmployees([]);
       setRoleAssignments([]);
-      setNavigationStack([]);
-      setStage('adminUpload');
       console.log('[App] New cycle created:', newId);
     } catch (err) {
       console.error('[App] Failed to start new survey:', err);
@@ -377,21 +364,6 @@ function App() {
           <ThankYouScreen onStartOver={handleStartOver} />
         )}
 
-        {userRole === 'admin' && stage === 'adminUpload' && (
-          <AdminUpload
-            onUpload={handleAdminUploadFile}
-            onBack={navigationStack.length > 0 ? goBack : null}
-          />
-        )}
-
-        {userRole === 'admin' && stage === 'roleAssignment' && (
-          <RoleAssignment
-            employees={employees}
-            onComplete={handleRoleAssignmentComplete}
-            onBack={navigationStack.length > 0 ? goBack : null}
-          />
-        )}
-
         {userRole === 'admin' && stage === 'adminDashboard' && (
           <AdminDashboard
             employees={employees}
@@ -400,6 +372,7 @@ function App() {
             cycleId={currentCycleId}
             onStartOver={handleStartOver}
             onStartNewSurvey={handleStartNewSurvey}
+            onSetupComplete={handleSetupComplete}
             onDeleteAssignment={handleDeleteAssignment}
             onOpenReport={handleOpenReport}
           />
