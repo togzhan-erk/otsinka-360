@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getArchivedCycles, getCycleFeedback } from '../cycles';
+import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, onStartOver, onStartNewSurvey, onDeleteAssignment, competencies, onOpenReport }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, onStartOver, onStartNewSurvey, onDeleteAssignment, onOpenReport }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
@@ -133,10 +134,16 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   };
 
   // ── Excel export ───────────────────────────────────────────────────────────
+  // Union of both tracks' competencies: a cycle can mix standard and
+  // top-management employees, and each feedback doc only carries scores
+  // for its own track's ids — the other track's columns are simply blank
+  // for that row.
+  const ALL_COMPETENCIES = [...STANDARD_COMPETENCIES, ...TOP_COMPETENCIES];
+
   const handleExportExcel = () => {
     if (feedbackList.length === 0) return;
 
-    const compNames = (competencies || []).map(c => c.name);
+    const compNames = ALL_COMPETENCIES.map(c => c.name);
     const header = [
       'ФИО оцениваемого',
       'Тип отношений',
@@ -147,7 +154,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
     ];
 
     const rows = feedbackList.map(f => {
-      const scores = (competencies || []).map(c => {
+      const scores = ALL_COMPETENCIES.map(c => {
         return f.competencyScores?.[c.id] ?? f.competencyScores?.[String(c.id)] ?? '';
       });
       const date = f.submittedAt?.toDate
@@ -413,7 +420,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                 key={group.name}
                 group={group}
                 onOpenReport={onOpenReport}
-                reportOpts={{ cycleId }}
+                reportOpts={{ cycleId, track: getEmployeeTrack(employees, group.name) }}
               />
             ))}
           </div>
@@ -456,6 +463,13 @@ function groupFeedbackByEvaluee(feedbackList) {
     acc[key].feedbacks.push(item);
     return acc;
   }, {});
+}
+
+// Feedback docs only carry evalueeName (not a reliably real id — the manual
+// no-invite-link rater flow stores the name in place of an id), so the
+// employee's track is looked up by name against that cycle's employee list.
+function getEmployeeTrack(employees, evalueeName) {
+  return employees.find(e => e.name === evalueeName)?.track || DEFAULT_TRACK;
 }
 
 function ProgressWidget({ completed, total, pct }) {
@@ -581,7 +595,7 @@ function ArchiveTab({ onOpenReport }) {
   const [cycles, setCycles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [openCycle, setOpenCycle] = useState(null); // { id, name, feedbacks, loading }
+  const [openCycle, setOpenCycle] = useState(null); // { id, name, employees, feedbacks, loading }
 
   useEffect(() => {
     let cancelled = false;
@@ -596,10 +610,10 @@ function ArchiveTab({ onOpenReport }) {
   }, []);
 
   const handleOpenCycle = async (cycle) => {
-    setOpenCycle({ id: cycle.id, name: cycle.name, feedbacks: [], loading: true });
+    setOpenCycle({ id: cycle.id, name: cycle.name, employees: cycle.employees || [], feedbacks: [], loading: true });
     try {
       const feedbacks = await getCycleFeedback(cycle.id);
-      setOpenCycle({ id: cycle.id, name: cycle.name, feedbacks, loading: false });
+      setOpenCycle({ id: cycle.id, name: cycle.name, employees: cycle.employees || [], feedbacks, loading: false });
     } catch (err) {
       console.error('[ArchiveTab] Failed to load cycle results:', err);
       alert('Ошибка загрузки результатов архива: ' + err.message);
@@ -630,7 +644,7 @@ function ArchiveTab({ onOpenReport }) {
             key={group.name}
             group={group}
             onOpenReport={onOpenReport}
-            reportOpts={{ cycleId: openCycle.id, readOnly: true }}
+            reportOpts={{ cycleId: openCycle.id, readOnly: true, track: getEmployeeTrack(openCycle.employees, group.name) }}
           />
         ))}
       </div>

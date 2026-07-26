@@ -3,6 +3,7 @@ import {
   query, where, limit, serverTimestamp, runTransaction, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { DEFAULT_TRACK } from './competencies';
 
 // ── Cycle reads ───────────────────────────────────────────────────────────
 
@@ -138,5 +139,43 @@ export async function migrateLegacyDataIfNeeded() {
     console.log('[cycles] Migration complete. Cycle id:', newCycleRef.id, 'feedback docs copied:', feedbackDocs.length);
   } catch (err) {
     console.error('[cycles] Migration failed:', err);
+  }
+}
+
+// ── One-time backfill: give every existing employee (in every cycle,
+// active or archived) an explicit competency track. Employees created
+// before tracks existed default to "standard" so past data stays valid.
+// Guarded the same way as migrateLegacyDataIfNeeded — a transactional lock
+// on meta/tracksMigration so it only ever runs once, even with concurrent
+// clients on an unmigrated database.
+export async function migrateEmployeeTracksIfNeeded() {
+  const migrationRef = doc(db, 'meta', 'tracksMigration');
+  let wonRace = false;
+  try {
+    await runTransaction(db, async (tx) => {
+      const migSnap = await tx.get(migrationRef);
+      if (migSnap.exists() && migSnap.data().done) return;
+      tx.set(migrationRef, { done: true, migratedAt: serverTimestamp() });
+      wonRace = true;
+    });
+  } catch (err) {
+    console.error('[cycles] Track migration lock transaction failed:', err);
+    return;
+  }
+  if (!wonRace) return;
+
+  console.log('[cycles] Running one-time backfill of default competency track...');
+  try {
+    const allCycles = await getDocs(collection(db, 'cycles'));
+    for (const cycleDoc of allCycles.docs) {
+      const employeesList = cycleDoc.data().employees || [];
+      if (employeesList.length === 0) continue;
+      if (employeesList.every(e => e.track)) continue;
+      const updated = employeesList.map(e => ({ ...e, track: e.track || DEFAULT_TRACK }));
+      await setDoc(doc(db, 'cycles', cycleDoc.id), { employees: updated }, { merge: true });
+    }
+    console.log('[cycles] Track backfill complete.');
+  } catch (err) {
+    console.error('[cycles] Track backfill failed:', err);
   }
 }

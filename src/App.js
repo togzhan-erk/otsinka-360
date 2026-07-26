@@ -10,18 +10,10 @@ import EmployeeReport from './components/EmployeeReport';
 import { db } from './firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import {
-  migrateLegacyDataIfNeeded, getActiveCycle, getCycle,
+  migrateLegacyDataIfNeeded, migrateEmployeeTracksIfNeeded, getActiveCycle, getCycle,
   saveCycleData, archiveCycle, createCycle,
 } from './cycles';
-
-const EMPLOYEE_COMPETENCIES = [
-  { id: 1, name: 'Коммуникация', question: 'Ясно выражает свои идеи и активно слушает других' },
-  { id: 2, name: 'Командная работа', question: 'Поддерживает атмосферу в команде и помогает коллегам' },
-  { id: 3, name: 'Управление временем', question: 'Планирует работу и соблюдает сроки' },
-  { id: 4, name: 'Качество работы', question: 'Обращает внимание на детали и стремится к совершенству' },
-  { id: 5, name: 'Инициатива и решение проблем', question: 'Проактивно предлагает идеи и решает проблемы' },
-  { id: 6, name: 'Ответственность', question: 'Надежен и отвечает за результаты своей работы' }
-];
+import { getCompetenciesForTrack, DEFAULT_TRACK } from './competencies';
 
 const RELATIONSHIP_TYPES = [
   { value: 'self', label: 'Самооценка', description: 'Оцениваю себя сам', icon: '🪞' },
@@ -67,6 +59,7 @@ function App() {
   const [reportData, setReportData] = useState(null); // { name, feedbacks, cycleId, readOnly }
   const [currentCycleId, setCurrentCycleId] = useState(null);
   const [currentAssignmentId, setCurrentAssignmentId] = useState(null);
+  const [currentEvalueeTrack, setCurrentEvalueeTrack] = useState(DEFAULT_TRACK);
 
   // On first load: run the one-time legacy-data migration, then if invite
   // params were captured at module level, resolve the right cycle and open RaterForm.
@@ -74,6 +67,7 @@ function App() {
     (async () => {
       try {
         await migrateLegacyDataIfNeeded();
+        await migrateEmployeeTracksIfNeeded();
       } catch (err) {
         console.error('[App] Migration check failed:', err);
       }
@@ -94,6 +88,7 @@ function App() {
           setCurrentCycleId(cycle.id);
           setCurrentAssignmentId(INVITE.assignmentId || null);
           setCurrentEvaluee(invite.evaluee.name);
+          setCurrentEvalueeTrack(invite.evaluee.track || DEFAULT_TRACK);
           setCurrentRaterType(invite.raterTypeValue);
           setUserRole('rater');
           setStage('raterForm');
@@ -109,7 +104,7 @@ function App() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType });
+  const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType, currentEvalueeTrack });
 
   const pushNav = () => {
     setNavigationStack(prev => [...prev, captureNav()]);
@@ -124,6 +119,7 @@ function App() {
       setUserRole(snap.userRole);
       setCurrentEvaluee(snap.currentEvaluee);
       setCurrentRaterType(snap.currentRaterType);
+      setCurrentEvalueeTrack(snap.currentEvalueeTrack || DEFAULT_TRACK);
       return prev.slice(0, -1);
     });
   }, []);
@@ -155,9 +151,10 @@ function App() {
     setStage('selectEvaluee');
   };
 
-  const handleSelectEvaluee = (name) => {
+  const handleSelectEvaluee = (employee) => {
     pushNav();
-    setCurrentEvaluee(name);
+    setCurrentEvaluee(employee.name);
+    setCurrentEvalueeTrack(employee.track || DEFAULT_TRACK);
     setStage('selectRaterType');
   };
 
@@ -180,6 +177,7 @@ function App() {
     setStage('checkingProject');
     try {
       await migrateLegacyDataIfNeeded();
+      await migrateEmployeeTracksIfNeeded();
       const cycle = await getActiveCycle();
       console.log('[App] Admin flow: active cycle:', cycle);
       setCurrentCycleId(cycle?.id || null);
@@ -206,6 +204,7 @@ function App() {
 
   const handleRoleAssignmentComplete = async (assignments, uploadedEmployees) => {
     const employeesToSave = uploadedEmployees || employees;
+    setEmployees(employeesToSave);
     setRoleAssignments(assignments);
     console.log('[App] Admin flow: saving cycle data. Employees:', employeesToSave, 'Assignments:', assignments);
     try {
@@ -250,7 +249,13 @@ function App() {
 
   const handleOpenReport = (name, feedbacks, opts = {}) => {
     pushNav();
-    setReportData({ name, feedbacks, cycleId: opts.cycleId || currentCycleId, readOnly: !!opts.readOnly });
+    setReportData({
+      name,
+      feedbacks,
+      cycleId: opts.cycleId || currentCycleId,
+      readOnly: !!opts.readOnly,
+      track: opts.track || DEFAULT_TRACK,
+    });
     setStage('employeeReport');
   };
 
@@ -283,6 +288,7 @@ function App() {
     setSubmittedFeedback([]);
     setCurrentCycleId(null);
     setCurrentAssignmentId(null);
+    setCurrentEvalueeTrack(DEFAULT_TRACK);
   };
 
   return (
@@ -320,7 +326,7 @@ function App() {
                 </div>
               )}
               <SelectEvalueeForm
-                employees={employees.map(e => e.name)}
+                employees={employees}
                 onSelect={handleSelectEvaluee}
               />
             </div>
@@ -355,7 +361,7 @@ function App() {
         {userRole === 'rater' && stage === 'raterForm' && currentEvaluee && (
           <RaterForm
             evaluee={{ id: currentEvaluee, name: currentEvaluee }}
-            competencies={EMPLOYEE_COMPETENCIES}
+            competencies={getCompetenciesForTrack(currentEvalueeTrack)}
             employeeType="employee"
             onSubmit={handleRaterSubmitFeedback}
             onBack={navigationStack.length > 0 ? goBack : null}
@@ -395,7 +401,6 @@ function App() {
             onStartOver={handleStartOver}
             onStartNewSurvey={handleStartNewSurvey}
             onDeleteAssignment={handleDeleteAssignment}
-            competencies={EMPLOYEE_COMPETENCIES}
             onOpenReport={handleOpenReport}
           />
         )}
@@ -404,7 +409,7 @@ function App() {
           <EmployeeReport
             employeeName={reportData.name}
             feedbacks={reportData.feedbacks}
-            competencies={EMPLOYEE_COMPETENCIES}
+            competencies={getCompetenciesForTrack(reportData.track)}
             onBack={navigationStack.length > 0 ? goBack : null}
             onDeleteFeedback={reportData.readOnly ? undefined : handleDeleteFeedback}
           />
@@ -441,11 +446,12 @@ function BackButton({ onBack }) {
 }
 
 function SelectEvalueeForm({ employees, onSelect }) {
-  const [selectedName, setSelectedName] = useState('');
+  const [selectedId, setSelectedId] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (selectedName) onSelect(selectedName);
+    const employee = employees.find(emp => String(emp.id) === selectedId);
+    if (employee) onSelect(employee);
   };
 
   return (
@@ -453,22 +459,22 @@ function SelectEvalueeForm({ employees, onSelect }) {
       <div className="form-group">
         <label><strong>Выберите сотрудника:</strong></label>
         <select
-          value={selectedName}
-          onChange={(e) => setSelectedName(e.target.value)}
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
           className="input"
         >
           <option value="">-- Выберите из списка --</option>
-          {employees.map((name, idx) => (
-            <option key={idx} value={name}>{name}</option>
+          {employees.map((emp) => (
+            <option key={emp.id} value={emp.id}>{emp.name}</option>
           ))}
         </select>
       </div>
 
       <button
         type="submit"
-        disabled={!selectedName}
+        disabled={!selectedId}
         className="btn btn-success"
-        style={{ opacity: selectedName ? 1 : 0.5 }}
+        style={{ opacity: selectedId ? 1 : 0.5 }}
       >
         Далее →
       </button>
