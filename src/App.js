@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import RoleSelector from './components/RoleSelector';
+import Logo from './components/Logo';
 import RaterForm from './components/RaterForm';
 import ThankYouScreen from './components/ThankYouScreen';
 import AdminDashboard from './components/AdminDashboard';
@@ -281,7 +282,9 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Оценка 360 — ИПР генератор</h1>
+        <h1 className="app-logo-heading">
+          <Logo className="app-logo" />
+        </h1>
         <p>Индивидуальный план развития на основе AI анализа</p>
       </header>
 
