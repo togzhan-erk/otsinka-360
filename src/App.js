@@ -243,6 +243,8 @@ function App() {
       cycleId: opts.cycleId || currentCycleId,
       readOnly: !!opts.readOnly,
       track: opts.track || DEFAULT_TRACK,
+      department: opts.department || '',
+      cycleName: opts.cycleName || '',
     });
     setStage('employeeReport');
   };
@@ -386,6 +388,9 @@ function App() {
             employeeName={reportData.name}
             feedbacks={reportData.feedbacks}
             competencies={getCompetenciesForTrack(reportData.track)}
+            track={reportData.track}
+            department={reportData.department}
+            cycleName={reportData.cycleName}
             onBack={navigationStack.length > 0 ? goBack : null}
             onDeleteFeedback={reportData.readOnly ? undefined : handleDeleteFeedback}
           />

@@ -478,14 +478,17 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                   </p>
                 )}
 
-                {!loadingResults && Object.values(grouped).map(group => (
-                  <EmployeeResultRow
-                    key={group.name}
-                    group={group}
-                    onOpenReport={onOpenReport}
-                    reportOpts={{ cycleId, track: getEmployeeTrack(employees, group.name) }}
-                  />
-                ))}
+                {!loadingResults && Object.values(grouped).map(group => {
+                  const emp = findEmployeeByName(employees, group.name);
+                  return (
+                    <EmployeeResultRow
+                      key={group.name}
+                      group={group}
+                      onOpenReport={onOpenReport}
+                      reportOpts={{ cycleId, track: emp?.track || DEFAULT_TRACK, department: emp?.department || '', cycleName }}
+                    />
+                  );
+                })}
               </>
             )}
           </div>
@@ -530,9 +533,10 @@ function groupFeedbackByEvaluee(feedbackList) {
 
 // Feedback docs only carry evalueeName (not a reliably real id — the manual
 // no-invite-link rater flow stores the name in place of an id), so the
-// employee's track is looked up by name against that cycle's employee list.
-function getEmployeeTrack(employees, evalueeName) {
-  return employees.find(e => e.name === evalueeName)?.track || DEFAULT_TRACK;
+// employee's track/department are looked up by name against that cycle's
+// employee list.
+function findEmployeeByName(employees, evalueeName) {
+  return employees.find(e => e.name === evalueeName);
 }
 
 function EmptyCycleNotice({ onGoToSetup }) {
@@ -761,14 +765,20 @@ function ArchiveTab({ onOpenReport }) {
           <p style={{ color: '#6f6f77' }}>В этом опросе нет ответов.</p>
         )}
 
-        {!openCycle.loading && Object.values(grouped).map(group => (
-          <EmployeeResultRow
-            key={group.name}
-            group={group}
-            onOpenReport={onOpenReport}
-            reportOpts={{ cycleId: openCycle.id, readOnly: true, track: getEmployeeTrack(openCycle.employees, group.name) }}
-          />
-        ))}
+        {!openCycle.loading && Object.values(grouped).map(group => {
+          const emp = findEmployeeByName(openCycle.employees, group.name);
+          return (
+            <EmployeeResultRow
+              key={group.name}
+              group={group}
+              onOpenReport={onOpenReport}
+              reportOpts={{
+                cycleId: openCycle.id, readOnly: true,
+                track: emp?.track || DEFAULT_TRACK, department: emp?.department || '', cycleName: openCycle.name,
+              }}
+            />
+          );
+        })}
       </div>
     );
   }

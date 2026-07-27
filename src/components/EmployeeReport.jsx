@@ -1,4 +1,23 @@
 import React, { useRef } from 'react';
+import { LogoIcon } from './Logo';
+import { TRACK_LABELS, DEFAULT_TRACK } from '../competencies';
+
+// Below this many non-self raters, individual scores/comments could be
+// traced back to a specific person — keep it a named constant so the
+// threshold is easy to tune later.
+const MIN_RATERS_FOR_REPORT = 3;
+
+// How far self-assessment must exceed the team's average (on the 1-5 scale)
+// before a competency is flagged as a possible blind spot.
+const BLIND_SPOT_THRESHOLD = 0.7;
+
+const BRAND = {
+  primary: '#2F4A3E',
+  leaf: '#3F6152',
+  accent: '#E29147',
+  cream: '#FAF7F1',
+  muted: '#8A7E6B',
+};
 
 // Maps both English keys and Russian labels to canonical Russian labels
 const NORMALIZE_TYPE = {
@@ -11,9 +30,6 @@ const NORMALIZE_TYPE = {
   'Коллега': 'Коллега',
   'Подчинённый': 'Подчинённый',
 };
-
-const TYPE_ORDER = ['Самооценка', 'Руководитель', 'Коллега', 'Подчинённый'];
-const TYPE_HEADERS = ['Самооценка', 'Руководитель', 'Коллеги', 'Подчинённые'];
 
 function norm(type) {
   return NORMALIZE_TYPE[type] || type;
@@ -31,87 +47,54 @@ function average(values) {
 }
 
 function fmt(n) {
-  return n !== null && n !== undefined ? n.toFixed(1) : '—';
+  return n !== null && n !== undefined ? n.toFixed(1).replace('.', ',') : '—';
 }
 
-function ScoreBar({ score }) {
-  const pct = score !== null ? Math.round((score / 5) * 100) : 0;
-  const color = score === null
-    ? 'var(--color-border)'
-    : score >= 4 ? 'var(--color-success)'
-    : score >= 3 ? 'var(--color-accent)'
-    : 'var(--color-danger)';
-  return (
-    <div style={{ background: 'var(--color-border)', borderRadius: 6, height: 10, overflow: 'hidden', flex: 1 }}>
-      <div style={{ background: color, width: `${pct}%`, height: '100%', borderRadius: 6 }} />
-    </div>
-  );
+function pluralizePeople(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'человек';
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'человека';
+  return 'человек';
 }
 
-function SectionTitle({ children }) {
-  return (
-    <h3 style={{
-      fontFamily: 'Fraunces, Georgia, serif',
-      color: 'var(--color-primary)',
-      fontSize: '1.1rem',
-      margin: '2rem 0 1rem',
-      paddingBottom: '0.4rem',
-      borderBottom: '2px solid var(--color-border)',
-    }}>
-      {children}
-    </h3>
-  );
-}
-
-function EmployeeReport({ employeeName, feedbacks, competencies, onBack, onDeleteFeedback }) {
+function EmployeeReport({ employeeName, feedbacks, competencies, department, cycleName, track, onBack, onDeleteFeedback }) {
   const reportRef = useRef(null);
 
-  // ── Normalize rater types ─────────────────────────────────────────────────
   const normalizedFeedbacks = feedbacks.map(f => ({ ...f, raterTypeNorm: norm(f.raterType) }));
+  const selfFeedbacks = normalizedFeedbacks.filter(f => f.raterTypeNorm === 'Самооценка');
+  const nonSelfFeedbacks = normalizedFeedbacks.filter(f => f.raterTypeNorm !== 'Самооценка');
+  const raterCount = nonSelfFeedbacks.length;
+  const hasEnoughData = raterCount >= MIN_RATERS_FOR_REPORT;
+  const hasSelfAssessment = selfFeedbacks.length > 0;
+  const trackLabel = TRACK_LABELS[track] || TRACK_LABELS[DEFAULT_TRACK];
 
-  const byType = {};
-  normalizedFeedbacks.forEach(f => {
-    const t = f.raterTypeNorm;
-    if (!byType[t]) byType[t] = [];
-    byType[t].push(f);
-  });
-
-  // ── Header counts ─────────────────────────────────────────────────────────
-  const typeSummaryParts = TYPE_ORDER
-    .filter(t => byType[t]?.length > 0)
-    .map(t => `${byType[t].length} ${t.toLowerCase()}`);
-
-  // ── Overall scores ────────────────────────────────────────────────────────
-  const allScores = normalizedFeedbacks.flatMap(f =>
-    competencies.map(c => getScore(f, c.id)).filter(v => v !== null)
+  // ── Overall average (all raters incl. self, across all competencies) ──────
+  const overallAvg = average(
+    normalizedFeedbacks.flatMap(f => competencies.map(c => getScore(f, c.id)))
   );
-  const overallAvg = average(allScores);
 
-  const selfFeedbacks = byType['Самооценка'] || [];
-  const selfScores = selfFeedbacks.flatMap(f =>
-    competencies.map(c => getScore(f, c.id)).filter(v => v !== null)
-  );
-  const selfAvg = average(selfScores);
+  // ── Per-competency self vs. team averages ──────────────────────────────────
+  const compRows = competencies.map(comp => ({
+    ...comp,
+    selfAvg: hasSelfAssessment ? average(selfFeedbacks.map(f => getScore(f, comp.id))) : null,
+    teamAvg: average(nonSelfFeedbacks.map(f => getScore(f, comp.id))),
+  }));
 
-  // ── Per-competency averages ───────────────────────────────────────────────
-  const compAvgs = competencies.map(comp => {
-    const vals = normalizedFeedbacks.map(f => getScore(f, comp.id)).filter(v => v !== null);
-    return { ...comp, avg: average(vals) };
-  });
-
-  const sorted = [...compAvgs].filter(c => c.avg !== null).sort((a, b) => b.avg - a.avg);
-  const topStrengths = sorted.slice(0, 3);
-  const topZones = [...sorted].reverse().slice(0, 3);
-
-  // ── Breakdown table ───────────────────────────────────────────────────────
-  const matrix = competencies.map(comp => {
-    const row = { comp, overall: compAvgs.find(c => c.id === comp.id)?.avg ?? null };
-    TYPE_ORDER.forEach(key => {
-      const vals = (byType[key] || []).map(f => getScore(f, comp.id)).filter(v => v !== null);
-      row[key] = average(vals);
+  // ── Blind spot: biggest self > team overshoot beyond the threshold ────────
+  let blindSpot = null;
+  if (hasSelfAssessment) {
+    let maxDiff = BLIND_SPOT_THRESHOLD;
+    compRows.forEach(row => {
+      if (row.selfAvg !== null && row.teamAvg !== null) {
+        const diff = row.selfAvg - row.teamAvg;
+        if (diff > maxDiff) {
+          maxDiff = diff;
+          blindSpot = { name: row.name, selfAvg: row.selfAvg, teamAvg: row.teamAvg };
+        }
+      }
     });
-    return row;
-  });
+  }
 
   // ── Comments (anonymized) ─────────────────────────────────────────────────
   const strengthComments = [];
@@ -140,7 +123,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, onBack, onDelet
     const canvas = await html2canvas(el, {
       scale: 2,
       useCORS: true,
-      backgroundColor: '#FAF7F1',
+      backgroundColor: BRAND.cream,
       logging: false,
     });
 
@@ -148,212 +131,183 @@ function EmployeeReport({ employeeName, feedbacks, competencies, onBack, onDelet
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 12;
-    const imgW = pageW - margin * 2;
+    const imgW = pageW;
     const imgH = (canvas.height * imgW) / canvas.width;
 
     let remaining = imgH;
-    let yOffset = margin;
+    let yOffset = 0;
 
-    pdf.addImage(imgData, 'PNG', margin, yOffset, imgW, imgH);
-    remaining -= (pageH - margin);
+    pdf.addImage(imgData, 'PNG', 0, yOffset, imgW, imgH);
+    remaining -= pageH;
 
     while (remaining > 0) {
       yOffset -= pageH;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', margin, yOffset, imgW, imgH);
+      pdf.addImage(imgData, 'PNG', 0, yOffset, imgW, imgH);
       remaining -= pageH;
     }
 
     const safeName = employeeName.replace(/\s+/g, '_');
-    pdf.save(`Отчет_360_${safeName}.pdf`);
+    pdf.save(`Отчёт_360_${safeName}.pdf`);
   };
-
-  const dateStr = new Date().toLocaleDateString('ru-RU', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  });
 
   return (
     <div className="container">
-      <div className="card" style={{ maxWidth: '860px' }}>
+      <div style={{ width: '100%', maxWidth: '860px' }}>
 
-        {/* ── Toolbar (excluded from PDF) ─────────────────────────────────── */}
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--color-border)',
-        }}>
-          <button
-            onClick={onBack}
-            style={{
-              background: 'none', border: 'none',
-              color: 'var(--color-text-muted)', cursor: 'pointer',
-              fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem',
-            }}
-          >
-            ← Назад к результатам
-          </button>
-          <button className="btn btn-success" onClick={handleDownloadPDF}>
-            ⬇ Скачать PDF
-          </button>
-        </div>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none', border: 'none',
+            color: BRAND.muted, cursor: 'pointer',
+            fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif",
+            fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem',
+            marginBottom: '1.25rem',
+          }}
+        >
+          ← Назад к результатам
+        </button>
 
-        {/* ── REPORT CONTENT (what gets captured for PDF) ─────────────────── */}
-        <div ref={reportRef} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: 'var(--color-text)' }}>
-
-          {/* Header */}
-          <div style={{ borderBottom: '3px solid var(--color-primary)', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
-            <div style={{
-              fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.08em',
-              color: 'var(--color-text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase',
-            }}>
-              Отчёт по результатам оценки 360°
+        {/* ── REPORT CARD (captured for PDF) ──────────────────────────────── */}
+        <div
+          ref={reportRef}
+          style={{
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            color: '#2B2620',
+            background: BRAND.cream,
+            borderRadius: 'var(--radius-card)',
+            overflow: 'hidden',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          {/* 1. Header */}
+          <div style={{
+            background: BRAND.primary, padding: '2rem 2.25rem',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            gap: '1.5rem', flexWrap: 'wrap',
+          }}>
+            <div>
+              <h1 style={{
+                fontFamily: "'Fraunces', Georgia, serif", color: '#fff',
+                fontSize: '1.85rem', fontWeight: 700, margin: '0 0 0.45rem',
+              }}>
+                Индивидуальный отчёт 360°
+              </h1>
+              <div style={{ color: 'rgba(250,247,241,0.82)', fontSize: '0.95rem' }}>
+                {[employeeName, department, cycleName].filter(Boolean).join(' · ')}
+              </div>
             </div>
-            <h1 style={{
-              fontFamily: 'Fraunces, Georgia, serif',
-              color: 'var(--color-primary)',
-              fontSize: '2rem', fontWeight: 700, margin: '0 0 0.75rem',
-            }}>
-              {employeeName}
-            </h1>
-            <div style={{ display: 'flex', gap: '2rem', color: 'var(--color-text-muted)', fontSize: '0.9rem', flexWrap: 'wrap' }}>
-              <span>📅 {dateStr}</span>
-              <span>
-                👥 {feedbacks.length} {feedbacks.length === 1 ? 'оценщик' : feedbacks.length < 5 ? 'оценщика' : 'оценщиков'}
-                {typeSummaryParts.length > 0 && `: ${typeSummaryParts.join(', ')}`}
-              </span>
-            </div>
+            <LogoIcon style={{ width: 56, height: 56, flexShrink: 0 }} />
           </div>
 
-          {/* Overall score cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: selfAvg !== null ? '1fr 1fr' : '1fr',
-            gap: '1.25rem',
-            marginBottom: '0.5rem',
-          }}>
-            <div style={scoreCardStyle('var(--color-primary)')}>
-              <div style={scoreCardLabel}>Общий балл</div>
-              <div style={{ ...scoreCardNumber, color: 'var(--color-primary)' }}>{fmt(overallAvg)}</div>
-              <div style={scoreCardSub}>Среднее по всем компетенциям и оценщикам</div>
-            </div>
-            {selfAvg !== null && (
-              <div style={scoreCardStyle('var(--color-accent)')}>
-                <div style={scoreCardLabel}>Самооценка</div>
-                <div style={{ ...scoreCardNumber, color: 'var(--color-accent)' }}>{fmt(selfAvg)}</div>
-                <div style={scoreCardSub}>Среднее по собственной оценке</div>
+          <div style={{ padding: '2.25rem' }}>
+            {!hasEnoughData ? (
+              <div style={{ padding: '2rem 1rem', textAlign: 'center' }}>
+                <p style={{ color: BRAND.muted, fontSize: '1rem', maxWidth: '520px', margin: '0 auto', lineHeight: 1.6 }}>
+                  Слишком мало оценок для отображения результатов — отчёт станет доступен, когда оценку пройдут
+                  минимум {MIN_RATERS_FOR_REPORT} {pluralizePeople(MIN_RATERS_FOR_REPORT)} (кроме самооценки).
+                  Это нужно для сохранения анонимности.
+                </p>
               </div>
+            ) : (
+              <>
+                {/* 2. Stat tiles */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.1rem', marginBottom: '0.5rem' }}>
+                  <StatTile label="Средний балл" value={`${fmt(overallAvg)} / 5`} sub="По всем компетенциям и оценивающим" />
+                  <StatTile label="Оценивших" value={String(raterCount)} sub={`${raterCount} ${pluralizePeople(raterCount)}, без самооценки`} />
+                  <StatTile label="Трек" value={trackLabel} small />
+                </div>
+
+                {/* 3. Competencies: self vs. team bars */}
+                <SectionTitle>Оценка по компетенциям</SectionTitle>
+                <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', fontSize: '0.82rem', color: BRAND.muted }}>
+                  {hasSelfAssessment && <Legend color={BRAND.accent} label="Самооценка" />}
+                  <Legend color={BRAND.primary} label="Оценка команды" />
+                </div>
+                {compRows.map(row => (
+                  <CompetencyRow key={row.id} row={row} showSelf={hasSelfAssessment} />
+                ))}
+
+                {/* 4. Blind spot callout */}
+                {blindSpot && (
+                  <div style={{
+                    marginTop: '1.5rem', padding: '1rem 1.25rem', borderRadius: '10px',
+                    background: '#FCEBD9', border: `1px solid ${BRAND.accent}55`,
+                  }}>
+                    <strong style={{ color: BRAND.primary }}>Возможная слепая зона:</strong>{' '}
+                    «{blindSpot.name}» — самооценка ({fmt(blindSpot.selfAvg)}) заметно выше оценки команды ({fmt(blindSpot.teamAvg)}).
+                  </div>
+                )}
+
+                {/* 5. Comments */}
+                {strengthComments.length > 0 && (
+                  <>
+                    <SectionTitle>Что делает особенно хорошо</SectionTitle>
+                    {strengthComments.map((c, i) => (
+                      <CommentCard key={i} label={c.label} text={c.text} index={i} />
+                    ))}
+                  </>
+                )}
+
+                {improveComments.length > 0 && (
+                  <>
+                    <SectionTitle>Что стоит развить</SectionTitle>
+                    {improveComments.map((c, i) => (
+                      <CommentCard key={i} label={c.label} text={c.text} index={i} />
+                    ))}
+                  </>
+                )}
+
+                {/* 6. IDP placeholder */}
+                <div style={{
+                  marginTop: '2rem', padding: '1.5rem', borderRadius: 'var(--radius-card)',
+                  background: BRAND.primary, color: '#fff',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem' }}>
+                    <span style={{
+                      background: BRAND.accent, color: '#fff', fontSize: '0.7rem', fontWeight: 700,
+                      padding: '0.2rem 0.55rem', borderRadius: '999px', letterSpacing: '0.04em',
+                    }}>
+                      AI
+                    </span>
+                    <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", margin: 0, fontSize: '1.15rem' }}>
+                      Индивидуальный план развития
+                    </h3>
+                  </div>
+                  <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>
+                    AI-план развития будет сгенерирован на основе результатов (подключается на следующем шаге).
+                  </p>
+                </div>
+              </>
             )}
           </div>
-
-          {/* Competency bars */}
-          <SectionTitle>Оценка по компетенциям</SectionTitle>
-          {compAvgs.map(comp => (
-            <div key={comp.id} style={{
-              display: 'grid', gridTemplateColumns: '1fr 160px 44px',
-              gap: '1rem', alignItems: 'center',
-              padding: '0.65rem 0', borderBottom: '1px solid var(--color-border)',
-            }}>
-              <span style={{ fontSize: '0.9rem' }}>{comp.name}</span>
-              <ScoreBar score={comp.avg} />
-              <span style={{
-                fontWeight: 700, textAlign: 'right', fontSize: '0.95rem',
-                color: comp.avg === null ? 'var(--color-border)'
-                  : comp.avg >= 4 ? 'var(--color-success)'
-                  : comp.avg >= 3 ? 'var(--color-accent)'
-                  : 'var(--color-danger)',
-              }}>
-                {fmt(comp.avg)}
-              </span>
-            </div>
-          ))}
-
-          {/* Breakdown table */}
-          <SectionTitle>Разбивка по типам оценщиков</SectionTitle>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--color-primary)', color: '#FAF7F1' }}>
-                  <th style={thStyle({ left: true })}>Компетенция</th>
-                  {TYPE_HEADERS.map(h => (
-                    <th key={h} style={thStyle({})}>{h}</th>
-                  ))}
-                  <th style={thStyle({ right: true })}>Среднее</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matrix.map((row, i) => (
-                  <tr key={row.comp.id} style={{ background: i % 2 === 0 ? '#fff' : 'var(--color-surface)' }}>
-                    <td style={tdStyle({ bold: true })}>{row.comp.name}</td>
-                    {TYPE_ORDER.map(key => (
-                      <td key={key} style={tdStyle({ center: true })}>
-                        {row[key] !== null && row[key] !== undefined
-                          ? <span style={{ color: scoreColor(row[key]) }}>{row[key].toFixed(1)}</span>
-                          : <span style={{ color: 'var(--color-border)' }}>—</span>}
-                      </td>
-                    ))}
-                    <td style={tdStyle({ center: true, bold: true })}>
-                      <span style={{ color: 'var(--color-primary)' }}>{fmt(row.overall)}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Strengths & Zones */}
-          <SectionTitle>Профиль компетенций</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '0.5rem' }}>
-            <HighlightBox
-              title="Сильные стороны"
-              items={topStrengths}
-              color="var(--color-success)"
-              bg="#F0F5F2"
-              border="#5B8C6E33"
-            />
-            <HighlightBox
-              title="Зоны развития"
-              items={topZones}
-              color="var(--color-danger)"
-              bg="#FDF1EF"
-              border="#C15B4A33"
-            />
-          </div>
-
-          {/* Open question comments */}
-          {strengthComments.length > 0 && (
-            <>
-              <SectionTitle>Комментарии: что делает хорошо</SectionTitle>
-              {strengthComments.map((c, i) => (
-                <CommentCard key={i} label={c.label} text={c.text} index={i} />
-              ))}
-            </>
-          )}
-
-          {improveComments.length > 0 && (
-            <>
-              <SectionTitle>Комментарии: что развивать</SectionTitle>
-              {improveComments.map((c, i) => (
-                <CommentCard key={i} label={c.label} text={c.text} index={i} />
-              ))}
-            </>
-          )}
-
-          {/* Footer */}
-          <div style={{
-            marginTop: '2.5rem', paddingTop: '1rem',
-            borderTop: '1px solid var(--color-border)',
-            textAlign: 'center', fontSize: '0.78rem',
-            color: 'var(--color-text-muted)',
-          }}>
-            Сгенерировано в Оценка 360 · {dateStr}
-          </div>
         </div>
 
-        {/* ── Individual answers (management only, excluded from PDF) ────── */}
+        {/* 7. Footer bar (excluded from the PDF) */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginTop: '1.25rem', flexWrap: 'wrap', gap: '0.75rem',
+        }}>
+          <span style={{ fontSize: '0.8rem', color: BRAND.muted }}>Конфиденциально · Growth 360°</span>
+          {hasEnoughData && (
+            <button
+              onClick={handleDownloadPDF}
+              style={{
+                background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
+                padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+              }}
+            >
+              ⬇ Скачать PDF
+            </button>
+          )}
+        </div>
+
+        {/* ── Individual answers (management only, excluded from PDF) ──────── */}
         {onDeleteFeedback && anonymizedRows.length > 0 && (
           <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border)' }}>
-            <strong style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Отдельные оценки:</strong>
+            <strong style={{ fontSize: '0.9rem', color: BRAND.muted }}>Отдельные оценки:</strong>
             {anonymizedRows.map(row => (
               <div
                 key={row.id}
@@ -366,7 +320,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, onBack, onDelet
                   background: 'var(--color-surface)',
                   borderRadius: '6px',
                   fontSize: '0.85rem',
-                  color: 'var(--color-text-muted)',
+                  color: BRAND.muted,
                 }}
               >
                 <span>{row.label}</span>
@@ -396,33 +350,76 @@ function EmployeeReport({ employeeName, feedbacks, competencies, onBack, onDelet
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-function HighlightBox({ title, items, color, bg, border }) {
+function StatTile({ label, value, sub, small }) {
   return (
     <div style={{
-      background: bg, borderRadius: 'var(--radius-card)',
-      padding: '1.25rem', border: `1.5px solid ${border}`,
+      background: '#fff', border: '1.5px solid var(--color-border)',
+      borderRadius: 'var(--radius-card)', padding: '1.25rem', textAlign: 'center',
+      borderTop: `4px solid ${BRAND.primary}`,
     }}>
-      <h4 style={{
-        fontFamily: 'Fraunces, Georgia, serif',
-        color, fontSize: '1rem', margin: '0 0 0.75rem',
+      <div style={{
+        fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em',
+        color: BRAND.muted, textTransform: 'uppercase', marginBottom: '0.5rem',
       }}>
-        {title}
-      </h4>
-      {items.length === 0 && (
-        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Недостаточно данных</p>
+        {label}
+      </div>
+      <div style={{
+        fontFamily: "'Fraunces', Georgia, serif", color: BRAND.primary,
+        fontSize: small ? '1.3rem' : '2.4rem', fontWeight: 700, lineHeight: 1.2, marginBottom: sub ? '0.35rem' : 0,
+      }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: '0.72rem', color: BRAND.muted, lineHeight: 1.4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return (
+    <h3 style={{
+      fontFamily: "'Fraunces', Georgia, serif",
+      color: BRAND.primary,
+      fontSize: '1.1rem',
+      margin: '2rem 0 1rem',
+      paddingBottom: '0.4rem',
+      borderBottom: '2px solid var(--color-border)',
+    }}>
+      {children}
+    </h3>
+  );
+}
+
+function Legend({ color, label }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+      <span style={{ width: 10, height: 10, borderRadius: 3, background: color, display: 'inline-block' }} />
+      {label}
+    </span>
+  );
+}
+
+function CompetencyRow({ row, showSelf }) {
+  const pct = (v) => (v !== null ? Math.max(0, Math.min(100, (v / 5) * 100)) : 0);
+  return (
+    <div style={{ padding: '0.85rem 0', borderBottom: '1px solid var(--color-border)' }}>
+      <div style={{ fontSize: '0.92rem', fontWeight: 600, marginBottom: '0.5rem' }}>{row.name}</div>
+      {showSelf && row.selfAvg !== null && (
+        <ScoreBarRow pct={pct(row.selfAvg)} value={row.selfAvg} color={BRAND.accent} />
       )}
-      {items.map((c, i) => (
-        <div key={c.id} style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '0.35rem 0',
-          borderBottom: i < items.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
-        }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--color-text)' }}>{c.name}</span>
-          <span style={{ fontWeight: 700, color, fontSize: '0.9rem', marginLeft: '0.5rem' }}>
-            {fmt(c.avg)}
-          </span>
-        </div>
-      ))}
+      <ScoreBarRow pct={pct(row.teamAvg)} value={row.teamAvg} color={BRAND.primary} />
+    </div>
+  );
+}
+
+function ScoreBarRow({ pct, value, color }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem' }}>
+      <div style={{ flex: 1, background: 'var(--color-border)', borderRadius: 6, height: 9, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 6 }} />
+      </div>
+      <span style={{ width: '40px', textAlign: 'right', fontSize: '0.85rem', fontWeight: 700, color }}>
+        {fmt(value)}
+      </span>
     </div>
   );
 }
@@ -438,66 +435,16 @@ function CommentCard({ label, text, index }) {
     }}>
       <div style={{
         fontSize: '0.72rem', fontWeight: 700,
-        color: 'var(--color-accent)', marginBottom: '0.3rem',
+        color: BRAND.accent, marginBottom: '0.3rem',
         textTransform: 'uppercase', letterSpacing: '0.05em',
       }}>
         {label}
       </div>
-      <div style={{ fontSize: '0.9rem', color: 'var(--color-text)', lineHeight: 1.6 }}>
+      <div style={{ fontSize: '0.9rem', color: '#2B2620', lineHeight: 1.6 }}>
         {text}
       </div>
     </div>
   );
-}
-
-// ── Style helpers ───────────────────────────────────────────────────────────
-
-const scoreCardStyle = (accent) => ({
-  background: '#fff',
-  border: '1.5px solid var(--color-border)',
-  borderRadius: 'var(--radius-card)',
-  padding: '1.5rem',
-  textAlign: 'center',
-  borderTop: `4px solid ${accent}`,
-});
-const scoreCardLabel = {
-  fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em',
-  color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem',
-};
-const scoreCardNumber = {
-  fontFamily: 'Fraunces, Georgia, serif',
-  fontSize: '3.5rem', fontWeight: 700, lineHeight: 1, marginBottom: '0.4rem',
-};
-const scoreCardSub = {
-  fontSize: '0.75rem', color: 'var(--color-text-muted)',
-  maxWidth: '160px', margin: '0 auto', lineHeight: 1.4,
-};
-
-function thStyle({ left, right } = {}) {
-  return {
-    padding: '0.6rem 0.75rem',
-    textAlign: left ? 'left' : 'center',
-    fontWeight: 600,
-    fontSize: '0.82rem',
-    borderRadius: left ? '6px 0 0 0' : right ? '0 6px 0 0' : 0,
-  };
-}
-
-function tdStyle({ bold, center } = {}) {
-  return {
-    padding: '0.55rem 0.75rem',
-    color: 'var(--color-text)',
-    fontWeight: bold ? 600 : 400,
-    textAlign: center ? 'center' : 'left',
-    fontSize: '0.85rem',
-  };
-}
-
-function scoreColor(v) {
-  if (v === null || v === undefined) return 'var(--color-border)';
-  if (v >= 4) return 'var(--color-success)';
-  if (v >= 3) return 'var(--color-accent)';
-  return 'var(--color-danger)';
 }
 
 export default EmployeeReport;

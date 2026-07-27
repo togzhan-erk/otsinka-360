@@ -22,4 +22,29 @@ function Logo({ className, title = 'Growth 360' }) {
   );
 }
 
+// Square icon-only mark (same design as public/favicon.svg) — used where a
+// compact brand mark is needed, e.g. the report header, instead of the full
+// wordmark logo.
+export function LogoIcon({ className, style, title = 'Growth 360' }) {
+  return (
+    <svg
+      className={className}
+      style={style}
+      viewBox="0 0 100 100"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label={title}
+    >
+      <rect x="4" y="4" width="92" height="92" rx="22" fill="#FAF7F1" stroke="#2F4A3E" strokeOpacity="0.10" />
+      <path d="M 67.2 23.4 A 30 30 0 1 1 32.8 23.4" fill="none" stroke="#2F4A3E" strokeWidth="6" strokeLinecap="round" />
+      <circle cx="67.2" cy="23.4" r="4" fill="#E29147" />
+      <g>
+        <path d="M50,70 C 50,60 50,54 50,47" stroke="#2F4A3E" strokeWidth="3.4" strokeLinecap="round" fill="none" />
+        <path d="M48,51 C 40,49.5 34,42 36,33 C 43,35 49,42 48,51 Z" fill="#3F6152" />
+        <path d="M52,51 C 60,49.5 66,42 64,33 C 57,35 51,42 52,51 Z" fill="#E29147" />
+      </g>
+    </svg>
+  );
+}
+
 export default Logo;
