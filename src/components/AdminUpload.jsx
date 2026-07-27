@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 
+const FIO_HEADERS = ['фио', 'фио сотрудника'];
+const EMAIL_HEADERS = ['email сотрудника', 'email', 'почта'];
+const MANAGER_EMAIL_HEADERS = ['email руководителя', 'почта руководителя'];
+const DEPARTMENT_HEADERS = ['отдел', 'подразделение', 'отдел/подразделение'];
+
+function findColumn(headers, candidates) {
+  return headers.findIndex(h => candidates.includes(String(h ?? '').trim().toLowerCase()));
+}
+
 function BackButton({ onBack }) {
   if (!onBack) return null;
   return (
@@ -14,6 +23,7 @@ function AdminUpload({ onUpload, onBack }) {
   const [employees, setEmployees] = useState([]);
   const [showTable, setShowTable] = useState(false);
   const [error, setError] = useState('');
+  const [autoAssignNote, setAutoAssignNote] = useState('');
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -33,27 +43,43 @@ function AdminUpload({ onUpload, onBack }) {
         }
 
         const headers = rows[0].map(h => typeof h === 'string' ? h.trim() : h);
-        const fioIdx = headers.findIndex(h => h.toLowerCase() === 'фио');
-        const emailIdx = headers.findIndex(h => h.toLowerCase() === 'почта');
+        const fioIdx = findColumn(headers, FIO_HEADERS);
+        const emailIdx = findColumn(headers, EMAIL_HEADERS);
+        const managerEmailIdx = findColumn(headers, MANAGER_EMAIL_HEADERS);
+        const departmentIdx = findColumn(headers, DEPARTMENT_HEADERS);
 
         if (fioIdx === -1 || emailIdx === -1) {
-          setError('Нужны колонки "ФИО" и "Почта"');
+          setError('Нужны колонки "ФИО" и "Email сотрудника"');
           return;
         }
 
         const newEmployees = rows.slice(1)
           .filter(row => row[fioIdx] && row[emailIdx])
-          .map((row, idx) => ({
-            id: `emp_${idx}`,
-            name: String(row[fioIdx]).trim(),
-            email: String(row[emailIdx]).trim()
-          }));
+          .map((row, idx) => {
+            const emp = {
+              id: `emp_${idx}`,
+              name: String(row[fioIdx]).trim(),
+              email: String(row[emailIdx]).trim(),
+            };
+            if (managerEmailIdx !== -1) {
+              emp.managerEmail = row[managerEmailIdx] ? String(row[managerEmailIdx]).trim() : '';
+            }
+            if (departmentIdx !== -1) {
+              emp.department = row[departmentIdx] ? String(row[departmentIdx]).trim() : '';
+            }
+            return emp;
+          });
 
         if (newEmployees.length === 0) {
           setError('Не найдены сотрудники');
           return;
         }
 
+        setAutoAssignNote(
+          managerEmailIdx === -1
+            ? 'В файле нет колонки «Email руководителя» — автоматическое назначение оценивающих на следующем шаге будет недоступно, но вы сможете назначить их вручную, как раньше.'
+            : ''
+        );
         setEmployees(newEmployees);
         setShowTable(true);
         setError('');
@@ -76,11 +102,25 @@ function AdminUpload({ onUpload, onBack }) {
           <span className="upload-button">📎 Выбрать файл</span>
         </label>
 
+        <div style={{ fontSize: '0.85rem', color: '#6f6f77', marginTop: '0.75rem', lineHeight: 1.5 }}>
+          Нужные колонки: <strong>ФИО</strong>, <strong>Email сотрудника</strong> (уникальный),{' '}
+          <strong>Email руководителя</strong> (для автоматического назначения оценивающих), опционально —{' '}
+          <strong>Отдел/подразделение</strong>.
+        </div>
+
         {error && <div className="error-message">{error}</div>}
 
         {showTable && employees.length > 0 && (
           <div>
             <h3>Загруженные ({employees.length})</h3>
+            {autoAssignNote && (
+              <div style={{
+                padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem',
+                background: '#fff8e6', border: '1px solid #f0d585', color: '#7a5c00', fontSize: '0.9rem',
+              }}>
+                {autoAssignNote}
+              </div>
+            )}
             <ul>
               {employees.map(emp => (
                 <li key={emp.id}>{emp.name} - {emp.email}</li>

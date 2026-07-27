@@ -8,6 +8,8 @@ const RELATIONSHIP_TYPES = [
   { value: 'subordinate', label: 'Подчиненный' },
 ];
 
+const LARGE_TEAM_THRESHOLD = 8;
+
 function BackButton({ onBack }) {
   if (!onBack) return null;
   return (
@@ -17,15 +19,62 @@ function BackButton({ onBack }) {
   );
 }
 
+// Builds assignments from org-chart data (email / managerEmail) alone:
+//   - everyone rates themselves (self)
+//   - a person's manager rates them (manager)
+//   - a person's direct reports rate them (subordinate)
+//   - everyone sharing that person's manager rates them (colleague)
+// Matching is by email, not name, per the task's requirement.
+function buildAutoAssignments(employees) {
+  const byEmail = new Map(
+    employees
+      .filter(e => e.email)
+      .map(e => [e.email.trim().toLowerCase(), e])
+  );
+  const norm = (email) => (email || '').trim().toLowerCase();
+  const generated = [];
+  let counter = 0;
+  const makeId = () => `auto_${Date.now()}_${counter++}`;
+
+  employees.forEach(emp => {
+    generated.push({ id: makeId(), evalueeId: emp.id, raterId: emp.id, relationType: 'self' });
+
+    const managerEmail = norm(emp.managerEmail);
+    const manager = managerEmail ? byEmail.get(managerEmail) : null;
+    if (manager && manager.id !== emp.id) {
+      generated.push({ id: makeId(), evalueeId: emp.id, raterId: manager.id, relationType: 'manager' });
+    }
+
+    employees
+      .filter(other => other.id !== emp.id && norm(other.managerEmail) === norm(emp.email))
+      .forEach(sub => {
+        generated.push({ id: makeId(), evalueeId: emp.id, raterId: sub.id, relationType: 'subordinate' });
+      });
+
+    if (managerEmail) {
+      employees
+        .filter(other => other.id !== emp.id && norm(other.managerEmail) === managerEmail)
+        .forEach(colleague => {
+          generated.push({ id: makeId(), evalueeId: emp.id, raterId: colleague.id, relationType: 'colleague' });
+        });
+    }
+  });
+
+  return generated;
+}
+
 function RoleAssignment({ employees, onComplete, onBack }) {
   const [assignments, setAssignments] = useState([]);
   const [selectedEvaluee, setSelectedEvaluee] = useState('');
   const [selectedRater, setSelectedRater] = useState('');
   const [selectedType, setSelectedType] = useState('colleague');
   const [error, setError] = useState('');
+  const [largeTeamWarning, setLargeTeamWarning] = useState(null);
   const [tracks, setTracks] = useState(() =>
     employees.reduce((acc, e) => ({ ...acc, [e.id]: e.track || DEFAULT_TRACK }), {})
   );
+
+  const hasManagerEmailData = employees.some(e => Object.prototype.hasOwnProperty.call(e, 'managerEmail'));
 
   const handleTrackChange = (employeeId, track) => {
     setTracks(prev => ({ ...prev, [employeeId]: track }));
@@ -47,6 +96,39 @@ function RoleAssignment({ employees, onComplete, onBack }) {
     setAssignments([...assignments, newAssign]);
     setSelectedRater('');
     setSelectedType('colleague');
+    setError('');
+  };
+
+  const handleRemoveAssignment = (id) => {
+    setAssignments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleAutoGenerate = () => {
+    const generated = buildAutoAssignments(employees);
+
+    setAssignments(prev => {
+      const existingKeys = new Set(prev.map(a => `${a.evalueeId}|${a.raterId}|${a.relationType}`));
+      const merged = [...prev];
+      generated.forEach(g => {
+        const key = `${g.evalueeId}|${g.raterId}|${g.relationType}`;
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          merged.push(g);
+        }
+      });
+      return merged;
+    });
+
+    const colleagueCounts = {};
+    generated.forEach(g => {
+      if (g.relationType === 'colleague') {
+        colleagueCounts[g.evalueeId] = (colleagueCounts[g.evalueeId] || 0) + 1;
+      }
+    });
+    const overloaded = Object.entries(colleagueCounts)
+      .filter(([, count]) => count > LARGE_TEAM_THRESHOLD)
+      .map(([evalueeId, count]) => ({ name: getNameById(evalueeId), count }));
+    setLargeTeamWarning(overloaded.length > 0 ? overloaded : null);
     setError('');
   };
 
@@ -95,6 +177,41 @@ function RoleAssignment({ employees, onComplete, onBack }) {
                 </select>
               </div>
             ))}
+          </div>
+        )}
+
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #e5e5e7', borderRadius: '8px' }}>
+          <h3 style={{ marginTop: 0, fontSize: '1.05rem' }}>Автоматическое назначение</h3>
+          {hasManagerEmailData ? (
+            <>
+              <p style={{ color: '#6f6f77', fontSize: '0.85rem' }}>
+                Построит самооценку, руководителя, коллег (тех же подчинённых) и подчинённых для каждого
+                сотрудника по колонке «Email руководителя». Уже добавленные назначения не дублируются.
+              </p>
+              <button onClick={handleAutoGenerate} className="btn btn-success">
+                🪄 Сгенерировать назначения автоматически
+              </button>
+            </>
+          ) : (
+            <p style={{ color: '#6f6f77', fontSize: '0.9rem' }}>
+              В загруженном файле нет колонки «Email руководителя», поэтому автоматическое назначение
+              недоступно. Назначьте оценивающих вручную ниже.
+            </p>
+          )}
+        </div>
+
+        {largeTeamWarning && (
+          <div style={{
+            marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px',
+            background: '#fff8e6', border: '1px solid #f0d585', color: '#7a5c00',
+          }}>
+            <strong>Внимание:</strong> у некоторых сотрудников получилось много «коллег»-оценивающих.
+            Возможно, стоит убрать часть вручную в списке ниже:
+            <ul style={{ marginTop: '0.5rem', marginBottom: 0, paddingLeft: '1.25rem' }}>
+              {largeTeamWarning.map(w => (
+                <li key={w.name}>{w.name} — {w.count} коллег</li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -155,12 +272,30 @@ function RoleAssignment({ employees, onComplete, onBack }) {
           <div style={{ marginTop: '2rem' }}>
             <h3>Добавленные ({assignments.length})</h3>
             {assignments.map(a => (
-              <div key={a.id} style={{ padding: '0.5rem', background: '#f5f5f7', margin: '0.5rem 0', borderRadius: '6px' }}>
-                <strong>{getNameById(a.evalueeId)}</strong>
-                {' ← '}
-                <span style={{ color: '#6f6f77', fontSize: '0.9rem' }}>{getLabelByType(a.relationType)}</span>
-                {' ← '}
-                <strong>{getNameById(a.raterId)}</strong>
+              <div
+                key={a.id}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0.5rem 0.75rem', background: '#f5f5f7', margin: '0.5rem 0', borderRadius: '6px', gap: '0.75rem',
+                }}
+              >
+                <div>
+                  <strong>{getNameById(a.evalueeId)}</strong>
+                  {' ← '}
+                  <span style={{ color: '#6f6f77', fontSize: '0.9rem' }}>{getLabelByType(a.relationType)}</span>
+                  {' ← '}
+                  <strong>{getNameById(a.raterId)}</strong>
+                </div>
+                <button
+                  onClick={() => handleRemoveAssignment(a.id)}
+                  title="Удалить это назначение"
+                  style={{
+                    background: 'none', border: '1px solid #e5e5e7', borderRadius: '5px',
+                    cursor: 'pointer', padding: '0.2rem 0.5rem', fontSize: '0.85rem', color: '#ff3b30',
+                  }}
+                >
+                  🗑
+                </button>
               </div>
             ))}
           </div>
