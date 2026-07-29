@@ -1,4 +1,4 @@
-const SYSTEM_PROMPT = "Ты — опытный HR-эксперт по развитию персонала. На основе результатов оценки 360° ты составляешь индивидуальный план развития (ИПР) сотрудника: конкретный, практичный и поддерживающий. Опирайся только на предоставленные данные, ничего не выдумывай. Не указывай, кто именно дал ту или иную оценку или комментарий — сохраняй анонимность оценивающих. Пиши по-русски, профессионально и уважительно, без канцелярита и общих фраз.";
+const SYSTEM_PROMPT = "Ты — опытный HR-эксперт по развитию персонала. На основе результатов оценки 360° ты составляешь индивидуальный план развития (ИПР) сотрудника: конкретный, практичный и поддерживающий. Опирайся только на предоставленные данные, ничего не выдумывай. Не указывай, кто именно дал ту или иную оценку или комментарий — сохраняй анонимность оценивающих. Пиши по-русски, профессионально и уважительно, без канцелярита и общих фраз. Отвечай СТРОГО валидным JSON-объектом: без markdown-разметки, без обрамления ```json, без какого-либо текста до или после JSON.";
 
 // Anthropic's content blocks are usually a single { type: "text", text }
 // item, but can legitimately contain other block types or multiple text
@@ -12,6 +12,29 @@ function extractText(data) {
     .map((item) => item.text)
     .join('\n')
     .trim();
+}
+
+// The model is asked for raw JSON but may still wrap it in a ```json fence
+// out of habit — strip that defensively before parsing. Falls back to the
+// raw string if parsing fails or the shape doesn't look like a plan, so the
+// client always has something to show.
+function parseIprResponse(text) {
+  let cleaned = text.trim();
+  const fenceMatch = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.plan)) {
+      return parsed;
+    }
+  } catch (err) {
+    // not valid JSON — fall through to the raw-text fallback below
+  }
+
+  return text;
 }
 
 function formatCompetencies(list) {
@@ -48,18 +71,16 @@ ${formatComments(strengthsComments)}
 Что сотруднику стоит развить (анонимные комментарии):
 ${formatComments(growthComments)}
 
-Сформируй ответ строго в такой структуре, с этими тремя заголовками:
+Верни ответ СТРОГО в виде JSON-объекта (без markdown, без обрамления \`\`\`json, без какого-либо текста до или после JSON) со следующей структурой:
+{
+  "strengths": "2–3 предложения о сильных сторонах, на что опираться (компетенции с высокими оценками команды)",
+  "growthAreas": ["зона роста 1", "зона роста 2"],
+  "plan": [
+    { "competency": "название компетенции", "action": "что конкретно делать, включая как именно", "result": "ожидаемый результат", "timeline": "срок, например 3 месяца" }
+  ]
+}
 
-Сильные стороны
-2–3 предложения о том, на что опираться (компетенции с высокими оценками команды).
-
-Зоны роста
-2–3 пункта на основе самых низких оценок команды и компетенций, где самооценка заметно выше оценки команды (возможные слепые зоны).
-
-План развития
-3–5 конкретных действий. Каждое действие — отдельным абзацем: что делать, как именно и какого результата ожидать. Привязывай действия к конкретным компетенциям из данных. Действия должны быть выполнимы за 3–6 месяцев.
-
-Будь конкретным и поддерживающим. Не перечисляй сами баллы в тексте — интерпретируй их.`;
+В "plan" должно быть от 3 до 5 пунктов, каждый привязан к конкретной компетенции из данных. Действия должны быть выполнимы за 3–6 месяцев. Не указывай, кто именно дал ту или иную оценку или комментарий — сохраняй анонимность оценивающих. Пиши по-русски, конкретно и поддерживающе.`;
 }
 
 export default async function handler(req, res) {
@@ -126,7 +147,9 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(200).json({ ipr: text });
+    const ipr = parseIprResponse(text);
+
+    res.status(200).json({ ipr });
   } catch (err) {
     console.error('[generate-ipr] Unexpected error:', err);
     res.status(500).json({ error: 'Не удалось сгенерировать ИПР. Попробуйте ещё раз.' });

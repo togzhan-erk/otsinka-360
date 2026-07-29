@@ -51,6 +51,13 @@ function fmt(n) {
   return n !== null && n !== undefined ? n.toFixed(1).replace('.', ',') : '—';
 }
 
+// Newly generated plans are structured objects ({ strengths, growthAreas,
+// plan }); plans saved before this format existed are plain strings — both
+// need to keep rendering correctly.
+function isStructuredIpr(data) {
+  return !!data && typeof data === 'object' && Array.isArray(data.plan);
+}
+
 function pluralizePeople(n) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -61,7 +68,7 @@ function pluralizePeople(n) {
 
 function EmployeeReport({ employeeName, feedbacks, competencies, department, cycleName, track, cycleId, onBack, onDeleteFeedback }) {
   const reportRef = useRef(null);
-  const [iprText, setIprText] = useState(null);
+  const [iprData, setIprData] = useState(null);
   const [iprLoading, setIprLoading] = useState(false);
   const [iprGenerating, setIprGenerating] = useState(false);
   const [iprError, setIprError] = useState(null);
@@ -122,18 +129,18 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
   // ── IPR (individual development plan) ──────────────────────────────────────
   useEffect(() => {
     if (!hasEnoughData || !cycleId || !employeeName) {
-      setIprText(null);
+      setIprData(null);
       setIprLoading(false);
       return;
     }
     let cancelled = false;
-    setIprText(null);
+    setIprData(null);
     setIprError(null);
     setIprLoading(true);
     getSavedIpr(cycleId, employeeName)
       .then(saved => {
         if (!cancelled) {
-          setIprText(saved?.text || null);
+          setIprData(saved?.text || null);
           setIprLoading(false);
         }
       })
@@ -175,7 +182,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
         throw new Error(data?.error || 'Не удалось сгенерировать ИПР. Попробуйте ещё раз.');
       }
 
-      setIprText(data.ipr);
+      setIprData(data.ipr);
 
       try {
         await saveIpr(cycleId, employeeName, data.ipr);
@@ -358,13 +365,17 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                     <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>Загрузка…</p>
                   )}
 
-                  {!iprLoading && iprText && (
-                    <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                      {iprText}
-                    </p>
+                  {!iprLoading && iprData && (
+                    isStructuredIpr(iprData) ? (
+                      <IprPlan data={iprData} />
+                    ) : (
+                      <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+                        {iprData}
+                      </p>
+                    )
                   )}
 
-                  {!iprLoading && !iprText && (
+                  {!iprLoading && !iprData && (
                     <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>
                       AI-план развития будет сгенерирован на основе результатов.
                     </p>
@@ -381,7 +392,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                       <button
                         onClick={handleGenerateIpr}
                         disabled={iprGenerating}
-                        style={iprText ? {
+                        style={iprData ? {
                           background: 'none', border: 'none', color: 'rgba(250,247,241,0.85)',
                           fontSize: '0.85rem', cursor: 'pointer', padding: 0, textDecoration: 'underline',
                           opacity: iprGenerating ? 0.6 : 1,
@@ -393,7 +404,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                       >
                         {iprGenerating
                           ? 'Генерируется…'
-                          : iprText ? '↻ Перегенерировать' : '✨ Сгенерировать ИПР'}
+                          : iprData ? '↻ Перегенерировать' : '✨ Сгенерировать ИПР'}
                       </button>
                     </div>
                   )}
@@ -565,5 +576,104 @@ function CommentCard({ label, text, index }) {
     </div>
   );
 }
+
+function IprPlan({ data }) {
+  const growthAreas = Array.isArray(data.growthAreas) ? data.growthAreas : [];
+  const plan = Array.isArray(data.plan) ? data.plan : [];
+
+  return (
+    <div>
+      {data.strengths && (
+        <div style={{ marginBottom: '1.1rem' }}>
+          <div style={iprSubheadingStyle}>Сильные стороны</div>
+          <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.6 }}>
+            {data.strengths}
+          </p>
+        </div>
+      )}
+
+      {growthAreas.length > 0 && (
+        <div style={{ marginBottom: '1.1rem' }}>
+          <div style={iprSubheadingStyle}>Зоны роста</div>
+          <ul style={{ margin: 0, paddingLeft: '1.25rem', color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.6 }}>
+            {growthAreas.map((item, i) => <li key={i}>{item}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {plan.length > 0 && (
+        <div>
+          <div style={iprSubheadingStyle}>План развития</div>
+          <IprPlanTable plan={plan} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const iprSubheadingStyle = {
+  fontFamily: "'Fraunces', Georgia, serif",
+  color: '#fff',
+  fontSize: '1rem',
+  fontWeight: 600,
+  marginBottom: '0.5rem',
+};
+
+function IprPlanTable({ plan }) {
+  return (
+    <div style={{
+      background: '#fff', borderRadius: '10px', overflow: 'hidden',
+      border: '1px solid #E5DFD3', overflowX: 'auto',
+    }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '12px' }}>
+        <colgroup>
+          <col style={{ width: '20%' }} />
+          <col style={{ width: '32%' }} />
+          <col style={{ width: '32%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <thead>
+          <tr style={{ background: BRAND.primary }}>
+            <th style={iprThStyle}>Компетенция</th>
+            <th style={iprThStyle}>Что делать</th>
+            <th style={iprThStyle}>Ожидаемый результат</th>
+            <th style={iprThStyle}>Срок</th>
+          </tr>
+        </thead>
+        <tbody>
+          {plan.map((item, i) => (
+            <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : BRAND.cream }}>
+              <td style={iprTdStyle}>{item.competency}</td>
+              <td style={iprTdStyle}>{item.action}</td>
+              <td style={iprTdStyle}>{item.result}</td>
+              <td style={iprTdStyle}>{item.timeline}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const iprThStyle = {
+  padding: '9px 10px',
+  textAlign: 'left',
+  verticalAlign: 'top',
+  color: BRAND.cream,
+  fontSize: '12px',
+  fontWeight: 700,
+};
+
+const iprTdStyle = {
+  padding: '8px 10px',
+  textAlign: 'left',
+  verticalAlign: 'top',
+  color: '#2B2620',
+  fontSize: '12px',
+  lineHeight: 1.5,
+  borderBottom: '1px solid #E5DFD3',
+  overflowWrap: 'break-word',
+  wordBreak: 'break-word',
+};
 
 export default EmployeeReport;
