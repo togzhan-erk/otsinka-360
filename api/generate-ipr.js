@@ -1,5 +1,19 @@
 const SYSTEM_PROMPT = "Ты — опытный HR-эксперт по развитию персонала. На основе результатов оценки 360° ты составляешь индивидуальный план развития (ИПР) сотрудника: конкретный, практичный и поддерживающий. Опирайся только на предоставленные данные, ничего не выдумывай. Не указывай, кто именно дал ту или иную оценку или комментарий — сохраняй анонимность оценивающих. Пиши по-русски, профессионально и уважительно, без канцелярита и общих фраз.";
 
+// Anthropic's content blocks are usually a single { type: "text", text }
+// item, but can legitimately contain other block types or multiple text
+// blocks (and a response cut off by max_tokens is still valid, partial
+// text) — concatenate every block that has a string .text instead of
+// assuming content[0].
+function extractText(data) {
+  if (!Array.isArray(data?.content)) return '';
+  return data.content
+    .filter((item) => typeof item?.text === 'string')
+    .map((item) => item.text)
+    .join('\n')
+    .trim();
+}
+
 function formatCompetencies(list) {
   if (!Array.isArray(list) || list.length === 0) return 'нет данных';
   return list
@@ -81,7 +95,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 1200,
+        max_tokens: 2000,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -95,10 +109,19 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    const text = data?.content?.[0]?.text;
+
+    if (data?.error) {
+      console.error('Anthropic error:', JSON.stringify(data.error));
+      res.status(500).json({ error: 'Не удалось сгенерировать ИПР. Попробуйте ещё раз.' });
+      return;
+    }
+
+    // stop_reason "max_tokens" means the response was cut off, not that it
+    // failed — whatever text came through is still returned to the client.
+    const text = extractText(data);
 
     if (!text) {
-      console.error('[generate-ipr] Unexpected Anthropic response shape:', JSON.stringify(data));
+      console.error('[generate-ipr] Empty text. Full data:', JSON.stringify(data));
       res.status(500).json({ error: 'Не удалось сгенерировать ИПР. Попробуйте ещё раз.' });
       return;
     }
