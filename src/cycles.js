@@ -7,8 +7,13 @@ import { DEFAULT_TRACK } from './competencies';
 
 // ── Cycle reads ───────────────────────────────────────────────────────────
 
-export async function getActiveCycle() {
-  const q = query(collection(db, 'cycles'), where('status', '==', 'active'), limit(1));
+// ownerUid is optional so the public (unauthenticated) "I'm a rater, let me
+// pick who to evaluate" flow — which has no user identity to scope by —
+// keeps working exactly as before. Admin call sites always pass their uid.
+export async function getActiveCycle(ownerUid) {
+  const clauses = [where('status', '==', 'active')];
+  if (ownerUid) clauses.push(where('ownerUid', '==', ownerUid));
+  const q = query(collection(db, 'cycles'), ...clauses, limit(1));
   const snap = await getDocs(q);
   if (snap.empty) return null;
   const d = snap.docs[0];
@@ -26,8 +31,13 @@ export async function getCycleFeedback(cycleId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function getArchivedCycles() {
-  const q = query(collection(db, 'cycles'), where('status', '==', 'archived'));
+export async function getArchivedCycles(ownerUid) {
+  if (!ownerUid) return [];
+  const q = query(
+    collection(db, 'cycles'),
+    where('status', '==', 'archived'),
+    where('ownerUid', '==', ownerUid)
+  );
   const snap = await getDocs(q);
   const cycles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   cycles.sort((a, b) => {
@@ -94,7 +104,7 @@ export async function saveIpr(cycleId, employeeName, text) {
   await setDoc(iprDocRef(cycleId, employeeName), { text, generatedAt: serverTimestamp() });
 }
 
-export async function createCycle(name) {
+export async function createCycle(name, ownerUid) {
   const ref = doc(collection(db, 'cycles'));
   await setDoc(ref, {
     name,
@@ -102,6 +112,7 @@ export async function createCycle(name) {
     createdAt: serverTimestamp(),
     employees: [],
     roleAssignments: [],
+    ownerUid,
   });
   return ref.id;
 }
@@ -197,5 +208,42 @@ export async function migrateEmployeeTracksIfNeeded() {
     console.log('[cycles] Track backfill complete.');
   } catch (err) {
     console.error('[cycles] Track backfill failed:', err);
+  }
+}
+
+// ── One-time backfill: attribute every pre-auth cycle (created before
+// per-owner data isolation existed) to the superadmin, so existing test
+// data isn't orphaned once cycle reads/writes start being scoped by
+// ownerUid. Only ever touches cycles that don't already have an owner —
+// safe to call on every superadmin login. Guarded the same way as the
+// other one-time migrations (transactional lock on meta/ownerMigration).
+export async function migrateCycleOwnersIfNeeded(superadminUid) {
+  if (!superadminUid) return;
+
+  const migrationRef = doc(db, 'meta', 'ownerMigration');
+  let wonRace = false;
+  try {
+    await runTransaction(db, async (tx) => {
+      const migSnap = await tx.get(migrationRef);
+      if (migSnap.exists() && migSnap.data().done) return;
+      tx.set(migrationRef, { done: true, migratedAt: serverTimestamp() });
+      wonRace = true;
+    });
+  } catch (err) {
+    console.error('[cycles] Owner migration lock transaction failed:', err);
+    return;
+  }
+  if (!wonRace) return;
+
+  console.log('[cycles] Running one-time backfill of cycle ownership to superadmin...');
+  try {
+    const allCycles = await getDocs(collection(db, 'cycles'));
+    for (const cycleDoc of allCycles.docs) {
+      if (cycleDoc.data().ownerUid) continue;
+      await setDoc(doc(db, 'cycles', cycleDoc.id), { ownerUid: superadminUid }, { merge: true });
+    }
+    console.log('[cycles] Owner backfill complete.');
+  } catch (err) {
+    console.error('[cycles] Owner backfill failed:', err);
   }
 }

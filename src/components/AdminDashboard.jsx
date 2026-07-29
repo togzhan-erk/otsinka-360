@@ -3,6 +3,8 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getArchivedCycles, getCycleFeedback } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
+import { isSuperadmin } from '../auth';
+import { getClients, createClient } from '../clients';
 import AdminUpload from './AdminUpload';
 import RoleAssignment from './RoleAssignment';
 import emailjs from '@emailjs/browser';
@@ -10,7 +12,7 @@ import * as XLSX from 'xlsx';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, onStartOver, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, currentUser, onStartOver, onLogout, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
@@ -201,6 +203,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const pendingCount = totalAssignments - completedCount;
   const cycleName = liveCycleName ?? '';
   const hasEmployees = employees.length > 0;
+  const isSuperadminUser = isSuperadmin(currentUser);
 
   const grouped = groupFeedbackByEvaluee(feedbackList);
 
@@ -212,17 +215,25 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h2 style={{ margin: 0 }}>Панель администратора</h2>
+            {currentUser?.email && (
+              <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{currentUser.email}</p>
+            )}
             {cycleName && (
               <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)' }}>{cycleName}</p>
             )}
           </div>
-          <button
-            onClick={() => setShowNewSurveyModal(true)}
-            className="btn btn-success"
-            style={{ background: '#ff3b30' }}
-          >
-            + Новый опрос
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowNewSurveyModal(true)}
+              className="btn btn-success"
+              style={{ background: '#ff3b30' }}
+            >
+              + Новый опрос
+            </button>
+            <button onClick={onLogout} className="btn btn-secondary">
+              Выйти
+            </button>
+          </div>
         </div>
 
         <div className="admin-tabs" style={{ marginTop: '1.5rem' }}>
@@ -241,6 +252,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           <button className={`tab-btn ${activeTab === 'archive' ? 'active' : ''}`} onClick={() => setActiveTab('archive')}>
             🗄 Архив
           </button>
+          {isSuperadminUser && (
+            <button className={`tab-btn ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
+              👑 Клиенты
+            </button>
+          )}
         </div>
 
         {/* ── Overview ── */}
@@ -496,7 +512,12 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
 
         {/* ── Archive ── */}
         {activeTab === 'archive' && (
-          <ArchiveTab onOpenReport={onOpenReport} />
+          <ArchiveTab onOpenReport={onOpenReport} ownerUid={currentUser?.uid} />
+        )}
+
+        {/* ── Clients (superadmin only) ── */}
+        {activeTab === 'clients' && isSuperadminUser && (
+          <ClientsTab currentUser={currentUser} />
         )}
 
         <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -717,7 +738,7 @@ function NewSurveyModal({ onCancel, onConfirm }) {
 
 // ── Archive tab ──────────────────────────────────────────────────────────────
 
-function ArchiveTab({ onOpenReport }) {
+function ArchiveTab({ onOpenReport, ownerUid }) {
   const [cycles, setCycles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -726,14 +747,14 @@ function ArchiveTab({ onOpenReport }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getArchivedCycles()
+    getArchivedCycles(ownerUid)
       .then(list => { if (!cancelled) { setCycles(list); setLoading(false); } })
       .catch(err => {
         console.error('[ArchiveTab] Failed to load archived cycles:', err);
         if (!cancelled) { setError(err.message); setLoading(false); }
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [ownerUid]);
 
   const handleOpenCycle = async (cycle) => {
     setOpenCycle({ id: cycle.id, name: cycle.name, employees: cycle.employees || [], feedbacks: [], loading: true });
@@ -817,6 +838,121 @@ function ArchiveTab({ onOpenReport }) {
           >
             Открыть результаты
           </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Clients tab (superadmin only) ───────────────────────────────────────────
+
+function ClientsTab({ currentUser }) {
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [form, setForm] = useState({ email: '', password: '', companyName: '' });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState(null);
+
+  const loadClients = () => {
+    setLoading(true);
+    getClients()
+      .then(list => { setClients(list); setLoading(false); setError(null); })
+      .catch(err => {
+        console.error('[ClientsTab] Failed to load clients:', err);
+        setError(err.message);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { loadClients(); }, []);
+
+  const handleFieldChange = (field) => (e) => {
+    setForm(prev => ({ ...prev, [field]: e.target.value }));
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setCreateError(null);
+
+    if (!form.email.trim() || !form.password || !form.companyName.trim()) {
+      setCreateError('Заполните все поля');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const idToken = await currentUser.getIdToken();
+      await createClient({
+        idToken,
+        email: form.email.trim(),
+        password: form.password,
+        companyName: form.companyName.trim(),
+      });
+      setForm({ email: '', password: '', companyName: '' });
+      loadClients();
+    } catch (err) {
+      console.error('[ClientsTab] Failed to create client:', err);
+      setCreateError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '2rem' }}>
+      <h3 style={{ marginTop: 0 }}>Клиенты</h3>
+
+      <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.25rem', marginBottom: '1.75rem' }}>
+        <h4 style={{ marginTop: 0 }}>Новый клиент</h4>
+        <form onSubmit={handleCreate}>
+          <div className="form-group">
+            <label>Email:</label>
+            <input type="email" className="input" value={form.email} onChange={handleFieldChange('email')} />
+          </div>
+          <div className="form-group">
+            <label>Пароль:</label>
+            <input type="password" className="input" value={form.password} onChange={handleFieldChange('password')} />
+          </div>
+          <div className="form-group">
+            <label>Название компании:</label>
+            <input type="text" className="input" value={form.companyName} onChange={handleFieldChange('companyName')} />
+          </div>
+
+          {createError && <div className="error-message">{createError}</div>}
+
+          <button type="submit" className="btn btn-success" disabled={creating}>
+            {creating ? 'Создание...' : '+ Создать клиента'}
+          </button>
+        </form>
+      </div>
+
+      <h4>Существующие клиенты ({clients.length})</h4>
+
+      {loading && <p style={{ color: '#6f6f77' }}>Загрузка...</p>}
+
+      {error && <div className="error-message">Ошибка загрузки клиентов: {error}</div>}
+
+      {!loading && !error && clients.length === 0 && (
+        <p style={{ color: 'var(--color-text-muted)' }}>Клиентов пока нет.</p>
+      )}
+
+      {!loading && clients.map(c => (
+        <div
+          key={c.id}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0.85rem 1.1rem', border: '1px solid var(--color-border)', borderRadius: '8px',
+            marginBottom: '0.6rem', gap: '1rem', flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: '600' }}>{c.companyName}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{c.email}</div>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+            {c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('ru-RU') : ''}
+          </div>
         </div>
       ))}
     </div>

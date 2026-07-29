@@ -4,15 +4,17 @@ import RoleSelector from './components/RoleSelector';
 import Logo from './components/Logo';
 import RaterForm from './components/RaterForm';
 import ThankYouScreen from './components/ThankYouScreen';
+import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeReport from './components/EmployeeReport';
 import { db } from './firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import {
-  migrateLegacyDataIfNeeded, migrateEmployeeTracksIfNeeded, getActiveCycle, getCycle,
-  saveCycleData, archiveCycle, createCycle,
+  migrateLegacyDataIfNeeded, migrateEmployeeTracksIfNeeded, migrateCycleOwnersIfNeeded,
+  getActiveCycle, getCycle, saveCycleData, archiveCycle, createCycle,
 } from './cycles';
 import { getCompetenciesForTrack, DEFAULT_TRACK } from './competencies';
+import { subscribeToAuthState, logout, isSuperadmin } from './auth';
 
 const RELATIONSHIP_TYPES = [
   { value: 'self', label: 'Самооценка', description: 'Оцениваю себя сам', icon: '🪞' },
@@ -59,6 +61,16 @@ function App() {
   const [currentCycleId, setCurrentCycleId] = useState(null);
   const [currentAssignmentId, setCurrentAssignmentId] = useState(null);
   const [currentEvalueeTrack, setCurrentEvalueeTrack] = useState(DEFAULT_TRACK);
+  // undefined = auth state still resolving, null = signed out, object = signed in
+  const [authUser, setAuthUser] = useState(undefined);
+
+  // Auth state is independent of everything else — subscribe once and keep
+  // it current for as long as the app is open. Rater routes never read this;
+  // only the admin flow gates on it.
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthState(setAuthUser);
+    return unsubscribe;
+  }, []);
 
   // On first load: run the one-time legacy-data migration, then if invite
   // params were captured at module level, resolve the right cycle and open RaterForm.
@@ -170,18 +182,25 @@ function App() {
   };
 
   // ── Admin flow ─────────────────────────────────────────────────────────────
-  const handleSelectAdminRole = async () => {
-    pushNav();
-    setUserRole('admin');
+  // Loads the signed-in admin's own active cycle. Only called once we know
+  // who's signed in — either right away (already-authenticated click) or
+  // from AdminLogin's onLoggedIn once sign-in succeeds.
+  const loadAdminDashboardData = async (user) => {
     setStage('checkingProject');
     try {
       await migrateLegacyDataIfNeeded();
       await migrateEmployeeTracksIfNeeded();
+      if (isSuperadmin(user)) {
+        // Claims any pre-auth cycles (created before per-owner isolation
+        // existed) for the superadmin, exactly once, without touching
+        // cycles that already have an owner.
+        await migrateCycleOwnersIfNeeded(user.uid);
+      }
     } catch (err) {
       console.error('[App] Admin flow: migration check failed:', err);
     }
     try {
-      const cycle = await getActiveCycle();
+      const cycle = await getActiveCycle(user.uid);
       console.log('[App] Admin flow: active cycle:', cycle);
       setCurrentCycleId(cycle?.id || null);
       setEmployees(cycle?.employees || []);
@@ -192,6 +211,28 @@ function App() {
     // The dashboard shell renders regardless of whether the active cycle has
     // data yet — its tabs show their own empty states when it doesn't.
     setStage('adminDashboard');
+  };
+
+  const handleSelectAdminRole = () => {
+    pushNav();
+    setUserRole('admin');
+    if (authUser) {
+      loadAdminDashboardData(authUser);
+    }
+    // else: the render below shows the login screen; onLoggedIn picks up from there
+  };
+
+  const handleAdminLoggedIn = (user) => {
+    loadAdminDashboardData(user);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (err) {
+      console.error('[App] Logout failed:', err);
+    }
+    handleStartOver();
   };
 
   const handleSetupComplete = async (assignments, uploadedEmployees) => {
@@ -224,7 +265,7 @@ function App() {
       if (currentCycleId) {
         await archiveCycle(currentCycleId);
       }
-      const newId = await createCycle(name);
+      const newId = await createCycle(name, authUser?.uid);
       setCurrentCycleId(newId);
       setEmployees([]);
       setRoleAssignments([]);
@@ -298,12 +339,19 @@ function App() {
           />
         )}
 
-        {(stage === 'checkingProject' || stage === 'loadingRaterData') && (
+        {(stage === 'checkingProject' || stage === 'loadingRaterData' || (userRole === 'admin' && authUser === undefined)) && (
           <div className="container">
             <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
               <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>Загрузка...</p>
             </div>
           </div>
+        )}
+
+        {userRole === 'admin' && authUser === null && (
+          <AdminLogin
+            onLoggedIn={handleAdminLoggedIn}
+            onBack={navigationStack.length > 0 ? goBack : null}
+          />
         )}
 
         {userRole === 'rater' && stage === 'selectEvaluee' && (
@@ -369,13 +417,15 @@ function App() {
           <ThankYouScreen onStartOver={handleStartOver} />
         )}
 
-        {userRole === 'admin' && stage === 'adminDashboard' && (
+        {userRole === 'admin' && authUser && stage === 'adminDashboard' && (
           <AdminDashboard
             employees={employees}
             roleAssignments={roleAssignments}
             submittedFeedback={submittedFeedback}
             cycleId={currentCycleId}
+            currentUser={authUser}
             onStartOver={handleStartOver}
+            onLogout={handleLogout}
             onStartNewSurvey={handleStartNewSurvey}
             onSetupComplete={handleSetupComplete}
             onDeleteAssignment={handleDeleteAssignment}
@@ -383,7 +433,7 @@ function App() {
           />
         )}
 
-        {userRole === 'admin' && stage === 'employeeReport' && reportData && (
+        {userRole === 'admin' && authUser && stage === 'employeeReport' && reportData && (
           <EmployeeReport
             employeeName={reportData.name}
             feedbacks={reportData.feedbacks}
