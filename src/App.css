@@ -95,12 +95,14 @@
 }
 
 /* ─── Role Selector ──────────────────────────────────────────────────────── */
+/* Single admin entry card now (raters only arrive via their invite link) —
+   centered rather than a two-column grid built for two cards. */
 .role-selector-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 2.5rem;
   margin: 2.5rem auto;
-  max-width: 900px;
+  max-width: 420px;
 }
 
 .role-card {

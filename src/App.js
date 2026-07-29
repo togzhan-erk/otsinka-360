@@ -11,20 +11,17 @@ import { db } from './firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import {
   migrateLegacyDataIfNeeded, migrateEmployeeTracksIfNeeded, migrateCycleOwnersIfNeeded,
-  migrateSubDocOwnersIfNeeded, getActiveCycle, getCycle, saveCycleData, archiveCycle, createCycle,
+  migrateSubDocOwnersIfNeeded, getActiveCycle, saveCycleData, archiveCycle, createCycle,
 } from './cycles';
 import { getCompetenciesForTrack, DEFAULT_TRACK } from './competencies';
 import { subscribeToAuthState, logout, isSuperadmin } from './auth';
 
-const RELATIONSHIP_TYPES = [
-  { value: 'self', label: 'Самооценка', description: 'Оцениваю себя сам', icon: '🪞' },
-  { value: 'manager', label: 'Руководитель', description: 'Я его прямой руководитель', icon: '👔' },
-  { value: 'colleague', label: 'Коллега', description: 'Мы работаем на одном уровне', icon: '👥' },
-  { value: 'subordinate', label: 'Подчиненный', description: 'Он мой прямой подчиненный', icon: '👤' }
-];
-
 // Capture invite params at module load time — before any React effects run or
 // history.replaceState clears the URL. This is the only safe place to read them.
+// evaluee/rater/type are no longer used to resolve anything (the server
+// derives them from the assignment) — kept only so an incomplete/old-style
+// link is still recognized as "this was trying to be an invite link" and
+// shown the invalid-link screen instead of silently falling through.
 const _initialParams = new URLSearchParams(window.location.search);
 const INVITE = {
   evalueeId: _initialParams.get('evaluee'),
@@ -34,19 +31,6 @@ const INVITE = {
   assignmentId: _initialParams.get('assignment'),
 };
 console.log('[App] URL params captured at module load:', window.location.search, INVITE);
-
-function resolveInviteFromProject(projectData) {
-  if (!INVITE.evalueeId || !INVITE.raterId || !INVITE.type) return null;
-  const employees = projectData?.employees || [];
-  const evaluee = employees.find(e => e.id === INVITE.evalueeId);
-  const rater = employees.find(e => e.id === INVITE.raterId);
-  if (!evaluee || !rater) {
-    console.warn('[App] Invite params found but could not match employees. evalueeId:', INVITE.evalueeId, 'raterId:', INVITE.raterId, 'employees in project:', employees.map(e => e.id));
-    return null;
-  }
-  const relationType = RELATIONSHIP_TYPES.find(r => r.value === INVITE.type);
-  return { evaluee, rater, raterTypeValue: INVITE.type, raterTypeLabel: relationType?.label || INVITE.type };
-}
 
 function App() {
   const [userRole, setUserRole] = useState(null);
@@ -60,10 +44,9 @@ function App() {
   const [reportData, setReportData] = useState(null); // { name, feedbacks, cycleId, readOnly }
   const [currentCycleId, setCurrentCycleId] = useState(null);
   const [currentAssignmentId, setCurrentAssignmentId] = useState(null);
-  const [currentEvalueeTrack, setCurrentEvalueeTrack] = useState(DEFAULT_TRACK);
-  // Set only by the invite-link path (via api/rater-form) — the server has
-  // already resolved the right competency list and question labels, so
-  // RaterForm doesn't need to re-derive them from a track id for that path.
+  // The server has already resolved the right competency list and question
+  // labels for the invite link being opened — RaterForm is driven entirely
+  // by this response, never by re-deriving anything from a track id client-side.
   const [raterFormCompetencies, setRaterFormCompetencies] = useState(null);
   const [raterFormQuestions, setRaterFormQuestions] = useState(null);
   // undefined = auth state still resolving, null = signed out, object = signed in
@@ -78,81 +61,61 @@ function App() {
   }, []);
 
   // On first load: if invite params were captured at module level, resolve
-  // the right assignment and open RaterForm. This is the public, unauthenticated
-  // path — it never touches Firestore directly; new-style links (cycle +
-  // assignment) are resolved entirely through api/rater-form. Legacy
-  // migrations only run from the admin flow now (see loadAdminDashboardData).
+  // the assignment and open RaterForm — entirely through api/rater-form, the
+  // only way anyone reaches the evaluation form. There is no manual "pick
+  // anyone and evaluate them" path anymore: an incomplete or invalid link
+  // (missing cycle/assignment ids, or ids that don't resolve to anything
+  // real) shows the invalidLink screen instead of falling back to a picker.
+  // A plain visit with no invite params at all just shows the admin entry
+  // screen (roleSelector). Legacy migrations only run from the admin flow
+  // now (see loadAdminDashboardData) — this path never touches Firestore.
   useEffect(() => {
     (async () => {
-      const hasNewStyleLink = INVITE.cycleId && INVITE.assignmentId;
-      if (!INVITE.evalueeId && !hasNewStyleLink) return; // not an invite link
+      const hasInviteParams = INVITE.evalueeId || INVITE.raterId || INVITE.type || INVITE.cycleId || INVITE.assignmentId;
+      if (!hasInviteParams) return; // plain visit — stay on the admin entry screen
 
-      setStage('loadingRaterData');
+      window.history.replaceState({}, '', '/');
 
-      if (hasNewStyleLink) {
-        try {
-          const res = await fetch(
-            `/api/rater-form?cycleId=${encodeURIComponent(INVITE.cycleId)}&assignmentId=${encodeURIComponent(INVITE.assignmentId)}`
-          );
-          const data = await res.json().catch(() => ({}));
-
-          if (!res.ok) {
-            console.warn('[App] rater-form lookup failed:', data?.error);
-            setStage('roleSelector');
-            return;
-          }
-
-          window.history.replaceState({}, '', '/');
-
-          if (data.alreadyCompleted) {
-            setStage('raterAlreadyDone');
-            return;
-          }
-
-          setCurrentCycleId(INVITE.cycleId);
-          setCurrentAssignmentId(INVITE.assignmentId);
-          setCurrentEvaluee(data.evalueeName);
-          setCurrentRaterType(data.relationType);
-          setRaterFormCompetencies(data.competencies || []);
-          setRaterFormQuestions(data.openQuestions || null);
-          setUserRole('rater');
-          setStage('raterForm');
-        } catch (err) {
-          console.error('[App] Error resolving invite via rater-form:', err);
-          setStage('roleSelector');
-        }
+      if (!INVITE.cycleId || !INVITE.assignmentId) {
+        console.warn('[App] Invite link missing cycle/assignment id');
+        setStage('invalidLink');
         return;
       }
 
-      // Legacy links sent before assignment ids existed on invite links —
-      // fall back to the old client-side lookup so they still work.
+      setStage('loadingRaterData');
       try {
-        const cycle = (INVITE.cycleId ? await getCycle(INVITE.cycleId) : null) || await getActiveCycle();
-        const invite = cycle ? resolveInviteFromProject(cycle) : null;
+        const res = await fetch(
+          `/api/rater-form?cycleId=${encodeURIComponent(INVITE.cycleId)}&assignmentId=${encodeURIComponent(INVITE.assignmentId)}`
+        );
+        const data = await res.json().catch(() => ({}));
 
-        if (invite && cycle) {
-          console.log('[App] Invite resolved successfully (legacy path):', invite, 'cycle:', cycle.id);
-          setEmployees(cycle.employees || []);
-          setCurrentCycleId(cycle.id);
-          setCurrentAssignmentId(null);
-          setCurrentEvaluee(invite.evaluee.name);
-          setCurrentEvalueeTrack(invite.evaluee.track || DEFAULT_TRACK);
-          setCurrentRaterType(invite.raterTypeValue);
-          setUserRole('rater');
-          setStage('raterForm');
-          window.history.replaceState({}, '', '/');
-        } else {
-          console.warn('[App] Invite params present but could not resolve — showing role selector');
-          setStage('roleSelector');
+        if (!res.ok) {
+          console.warn('[App] rater-form lookup failed:', data?.error);
+          setStage('invalidLink');
+          return;
         }
+
+        if (data.alreadyCompleted) {
+          setStage('raterAlreadyDone');
+          return;
+        }
+
+        setCurrentCycleId(INVITE.cycleId);
+        setCurrentAssignmentId(INVITE.assignmentId);
+        setCurrentEvaluee(data.evalueeName);
+        setCurrentRaterType(data.relationType);
+        setRaterFormCompetencies(data.competencies || []);
+        setRaterFormQuestions(data.openQuestions || null);
+        setUserRole('rater');
+        setStage('raterForm');
       } catch (err) {
-        console.error('[App] Error resolving invite link:', err);
-        setStage('roleSelector');
+        console.error('[App] Error resolving invite via rater-form:', err);
+        setStage('invalidLink');
       }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType, currentEvalueeTrack });
+  const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType });
 
   const pushNav = () => {
     setNavigationStack(prev => [...prev, captureNav()]);
@@ -167,14 +130,13 @@ function App() {
       setUserRole(snap.userRole);
       setCurrentEvaluee(snap.currentEvaluee);
       setCurrentRaterType(snap.currentRaterType);
-      setCurrentEvalueeTrack(snap.currentEvalueeTrack || DEFAULT_TRACK);
       return prev.slice(0, -1);
     });
   }, []);
 
   useEffect(() => {
     // Don't overwrite URL if we're processing an invite link — the invite effect handles cleanup.
-    if (!INVITE.evalueeId) {
+    if (!INVITE.evalueeId && !INVITE.cycleId && !INVITE.assignmentId) {
       window.history.replaceState({}, '', '/');
     }
     window.addEventListener('popstate', goBack);
@@ -182,36 +144,8 @@ function App() {
   }, [goBack]);
 
   // ── Rater flow ─────────────────────────────────────────────────────────────
-  const handleSelectRaterRole = async () => {
-    pushNav();
-    setUserRole('rater');
-    setStage('loadingRaterData');
-    try {
-      const cycle = await getActiveCycle();
-      console.log('[App] Rater flow: loaded active cycle:', cycle);
-      setEmployees(cycle?.employees || []);
-      setCurrentCycleId(cycle?.id || null);
-      setCurrentAssignmentId(null); // manual entry has no assignment context to link back to
-    } catch (err) {
-      console.error('[App] Rater flow: error loading employees:', err);
-      setEmployees([]);
-    }
-    setStage('selectEvaluee');
-  };
-
-  const handleSelectEvaluee = (employee) => {
-    pushNav();
-    setCurrentEvaluee(employee.name);
-    setCurrentEvalueeTrack(employee.track || DEFAULT_TRACK);
-    setStage('selectRaterType');
-  };
-
-  const handleSelectRaterType = (relationType) => {
-    pushNav();
-    setCurrentRaterType(relationType);
-    setStage('raterForm');
-  };
-
+  // The only outcome a rater's submission produces client-side — invite-link
+  // submissions post straight to api/submit-feedback inside RaterForm itself.
   const handleRaterSubmitFeedback = (feedback) => {
     setSubmittedFeedback(prev => [...prev, feedback]);
     setNavigationStack([]);
@@ -361,7 +295,6 @@ function App() {
     setSubmittedFeedback([]);
     setCurrentCycleId(null);
     setCurrentAssignmentId(null);
-    setCurrentEvalueeTrack(DEFAULT_TRACK);
     setRaterFormCompetencies(null);
     setRaterFormQuestions(null);
   };
@@ -378,7 +311,6 @@ function App() {
       <main className="app-main">
         {stage === 'roleSelector' && (
           <RoleSelector
-            onSelectRater={handleSelectRaterRole}
             onSelectAdmin={handleSelectAdminRole}
           />
         )}
@@ -398,46 +330,11 @@ function App() {
           />
         )}
 
-        {userRole === 'rater' && stage === 'selectEvaluee' && (
+        {stage === 'invalidLink' && (
           <div className="container">
-            <div className="card">
-              <BackButton onBack={navigationStack.length > 0 ? goBack : null} />
-              <h2>Выберите оцениваемого</h2>
-              <p className="subtitle">Кого вы будете оценивать?</p>
-              {employees.length === 0 && (
-                <div className="error-message" style={{ marginBottom: '1rem' }}>
-                  Список сотрудников не найден. Убедитесь, что HR-директор уже создал проект оценки.
-                </div>
-              )}
-              <SelectEvalueeForm
-                employees={employees}
-                onSelect={handleSelectEvaluee}
-              />
-            </div>
-          </div>
-        )}
-
-        {userRole === 'rater' && stage === 'selectRaterType' && (
-          <div className="container">
-            <div className="card">
-              <BackButton onBack={navigationStack.length > 0 ? goBack : null} />
-              <h2>Выберите тип отношения</h2>
-              <p className="subtitle">Какой тип отношения у вас с {currentEvaluee}?</p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginTop: '2rem' }}>
-                {RELATIONSHIP_TYPES.map(type => (
-                  <button
-                    key={type.value}
-                    onClick={() => handleSelectRaterType(type.value)}
-                    className="role-card"
-                    style={{ minHeight: 'auto', padding: '1.5rem' }}
-                  >
-                    <div style={{ fontSize: '1.5rem' }}>{type.icon}</div>
-                    <div style={{ fontWeight: '600' }}>{type.label}</div>
-                    <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{type.description}</div>
-                  </button>
-                ))}
-              </div>
+            <div className="card" style={{ maxWidth: '480px', textAlign: 'center' }}>
+              <h2>Ссылка недействительна</h2>
+              <p className="subtitle">Пожалуйста, воспользуйтесь персональной ссылкой из письма-приглашения.</p>
             </div>
           </div>
         )}
@@ -445,14 +342,9 @@ function App() {
         {userRole === 'rater' && stage === 'raterForm' && currentEvaluee && (
           <RaterForm
             evaluee={{ id: currentEvaluee, name: currentEvaluee }}
-            competencies={raterFormCompetencies || getCompetenciesForTrack(currentEvalueeTrack)}
+            competencies={raterFormCompetencies}
             openQuestionLabels={raterFormQuestions}
-            employeeType="employee"
             onSubmit={handleRaterSubmitFeedback}
-            onBack={navigationStack.length > 0 ? goBack : null}
-            currentIndex={1}
-            totalEvaluees={1}
-            raterType={RELATIONSHIP_TYPES.find(t => t.value === currentRaterType)?.label}
             cycleId={currentCycleId}
             assignmentId={currentAssignmentId}
           />
@@ -467,9 +359,6 @@ function App() {
             <div className="card" style={{ maxWidth: '480px', textAlign: 'center' }}>
               <h2>Вы уже прошли эту оценку</h2>
               <p className="subtitle">Спасибо! Ваш ответ уже сохранён — повторно проходить оценку по этой ссылке не нужно.</p>
-              <button onClick={handleStartOver} className="btn btn-primary">
-                ← На главную
-              </button>
             </div>
           </div>
         )}
@@ -506,68 +395,6 @@ function App() {
 
       </main>
     </div>
-  );
-}
-
-function BackButton({ onBack }) {
-  if (!onBack) return null;
-  return (
-    <button
-      onClick={onBack}
-      style={{
-        background: 'none',
-        border: 'none',
-        color: 'var(--color-text-muted)',
-        cursor: 'pointer',
-        fontSize: '0.9rem',
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
-        fontWeight: 500,
-        padding: '0',
-        marginBottom: '1.25rem',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '0.4rem',
-      }}
-    >
-      ← Назад
-    </button>
-  );
-}
-
-function SelectEvalueeForm({ employees, onSelect }) {
-  const [selectedId, setSelectedId] = useState('');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const employee = employees.find(emp => String(emp.id) === selectedId);
-    if (employee) onSelect(employee);
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <div className="form-group">
-        <label><strong>Выберите сотрудника:</strong></label>
-        <select
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-          className="input"
-        >
-          <option value="">-- Выберите из списка --</option>
-          {employees.map((emp) => (
-            <option key={emp.id} value={emp.id}>{emp.name}</option>
-          ))}
-        </select>
-      </div>
-
-      <button
-        type="submit"
-        disabled={!selectedId}
-        className="btn btn-success"
-        style={{ opacity: selectedId ? 1 : 0.5 }}
-      >
-        Далее →
-      </button>
-    </form>
   );
 }
 

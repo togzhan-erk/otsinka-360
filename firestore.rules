@@ -18,13 +18,10 @@ rules_version = '2';
 //                           scoping the cycle document covers both.
 //     └ feedback/{id}     — individual (anonymous) answers. Separate
 //                           documents, so each one carries its own
-//                           ownerUid — set at write time by
-//                           api/submit-feedback.mjs (invite-link raters,
-//                           via Admin SDK) and by src/cycles.js's
-//                           submitFeedback() (manual rater entry, via the
-//                           client SDK from an authenticated... no, this
-//                           path is currently unauthenticated too — see
-//                           the caveat below).
+//                           ownerUid, set at write time by
+//                           api/submit-feedback.mjs (Admin SDK — the only
+//                           way a feedback doc is ever created; raters
+//                           never write to Firestore directly).
 //     └ ipr/{employeeKey} — AI-generated development plans, one per
 //                           employee. Also carries its own ownerUid.
 //   - Every other path (meta/*, the legacy top-level projects/active and
@@ -35,18 +32,11 @@ rules_version = '2';
 //     run only once) before you publish these rules, or they'll simply
 //     no-op going forward, which is fine since they're one-time by design.
 //
-// KNOWN GAP — read before publishing:
-//   The "I'm a rater, no invite link" manual entry flow (RoleSelector →
-//   "Я оценивающий" → pick a name from a dropdown) still reads/writes
-//   Firestore directly from an unauthenticated browser session
-//   (getActiveCycle() / submitFeedback() in src/cycles.js). It was
-//   intentionally left alone in this pass — only the invite-link path was
-//   moved to api/rater-form.mjs + api/submit-feedback.mjs. Publishing
-//   these rules as-is will make that manual-entry path stop working
-//   (empty employee list, failed submissions), since it has no
-//   request.auth to satisfy the ownerUid check below. Either stop
-//   offering that entry point, or ask for it to be converted to a server
-//   function too, before publishing.
+// There is no more manual "pick anyone and evaluate them" rater entry —
+// the only way to reach the evaluation form is a personal invite link
+// (?cycle=...&assignment=...), which is resolved entirely through
+// api/rater-form.mjs + api/submit-feedback.mjs (Admin SDK, not subject to
+// these rules). The client-side rater flow makes zero Firestore calls.
 // ─────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {

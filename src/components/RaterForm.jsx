@@ -1,22 +1,15 @@
 import React, { useState } from 'react';
-import { serverTimestamp } from 'firebase/firestore';
-import { submitFeedback } from '../cycles';
 
 const DEFAULT_OPEN_QUESTIONS = {
   strength: 'Что делает хорошо?',
   improvement: 'Что развивать?',
 };
 
-function BackButton({ onBack }) {
-  if (!onBack) return null;
-  return (
-    <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-      ← Назад
-    </button>
-  );
-}
-
-function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, totalEvaluees, raterType, cycleId, assignmentId, openQuestionLabels }) {
+// Always reached via a personal invite link (cycleId + assignmentId) — the
+// only way anyone gets here, resolved server-side by api/rater-form. This
+// form never talks to Firestore directly; it only ever posts to
+// api/submit-feedback.
+function RaterForm({ evaluee, competencies, onSubmit, onBack, cycleId, assignmentId, openQuestionLabels }) {
   const labels = openQuestionLabels || DEFAULT_OPEN_QUESTIONS;
   const [scores, setScores] = useState(
     competencies.reduce((acc, comp) => ({ ...acc, [comp.id]: 3 }), {})
@@ -42,37 +35,20 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, tota
     setError('');
 
     try {
-      if (assignmentId) {
-        // Invite-link flow — goes through the server so the client never
-        // touches Firestore directly (needed for locking Firestore down to
-        // authenticated admins only).
-        console.log('[RaterForm] Submitting via api/submit-feedback for cycle', cycleId, 'assignment', assignmentId);
-        const res = await fetch('/api/submit-feedback', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            cycleId,
-            assignmentId,
-            competencyScores: scores,
-            openQuestions: { strength, improvement },
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data?.error || 'Не удалось сохранить ответ. Попробуйте ещё раз.');
-        }
-      } else {
-        // Manual entry flow (no invite link) — still writes via the client SDK.
-        const payload = {
-          evalueeId: evaluee.id,
-          evalueeName: evaluee.name,
-          raterType: raterType || 'unknown',
+      console.log('[RaterForm] Submitting via api/submit-feedback for cycle', cycleId, 'assignment', assignmentId);
+      const res = await fetch('/api/submit-feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          cycleId,
+          assignmentId,
           competencyScores: scores,
           openQuestions: { strength, improvement },
-          submittedAt: serverTimestamp(),
-        };
-        console.log('[RaterForm] Writing to cycle', cycleId, 'feedback collection (manual flow):', payload);
-        await submitFeedback(cycleId, assignmentId, payload);
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Не удалось сохранить ответ. Попробуйте ещё раз.');
       }
       onSubmit({ competencyScores: scores, openQuestions: { strength, improvement } });
     } catch (err) {
@@ -85,7 +61,11 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, tota
   return (
     <div className="container">
       <div className="card">
-        <BackButton onBack={onBack} />
+        {onBack && (
+          <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            ← Назад
+          </button>
+        )}
         <h2>Оценка компетенций</h2>
         <p className="subtitle">Оцените {evaluee?.name}</p>
 

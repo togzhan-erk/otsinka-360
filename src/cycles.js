@@ -7,9 +7,8 @@ import { DEFAULT_TRACK } from './competencies';
 
 // ── Cycle reads ───────────────────────────────────────────────────────────
 
-// ownerUid is optional so the public (unauthenticated) "I'm a rater, let me
-// pick who to evaluate" flow — which has no user identity to scope by —
-// keeps working exactly as before. Admin call sites always pass their uid.
+// Always called with the signed-in admin's uid in practice — ownerUid is
+// kept optional at the function level only as a defensive default.
 export async function getActiveCycle(ownerUid) {
   const clauses = [where('status', '==', 'active')];
   if (ownerUid) clauses.push(where('ownerUid', '==', ownerUid));
@@ -56,37 +55,6 @@ export async function saveCycleData(cycleId, { employees, roleAssignments }) {
 
 export async function archiveCycle(cycleId) {
   await setDoc(doc(db, 'cycles', cycleId), { status: 'archived' }, { merge: true });
-}
-
-// Writes a feedback doc and, if assignmentId is given, flags that one
-// assignment as completed in the same transaction. The feedback payload
-// itself carries no rater identity — completion is tracked purely on the
-// roleAssignments array, which is how anonymity is kept even though admins
-// can see who has/hasn't responded. Used only by the manual (no invite
-// link) rater flow now — invite-link submissions go through
-// api/submit-feedback.mjs instead, which never touches Firestore from the
-// client at all.
-export async function submitFeedback(cycleId, assignmentId, feedbackPayload) {
-  const cycleRef = doc(db, 'cycles', cycleId);
-  const feedbackRef = doc(collection(db, 'cycles', cycleId, 'feedback'));
-  await runTransaction(db, async (tx) => {
-    const cycleSnap = await tx.get(cycleRef);
-    const ownerUid = cycleSnap.exists() ? (cycleSnap.data().ownerUid || null) : null;
-
-    if (assignmentId && cycleSnap.exists()) {
-      const assignments = cycleSnap.data().roleAssignments || [];
-      const updated = assignments.map(a =>
-        String(a.id) === String(assignmentId)
-          ? { ...a, completed: true, completedAt: new Date() }
-          : a
-      );
-      tx.set(cycleRef, { roleAssignments: updated }, { merge: true });
-    }
-    // ownerUid identifies the cycle's owner (the HR client), not the rater —
-    // it exists so strict per-owner Firestore rules can scope reads to them.
-    tx.set(feedbackRef, { ...feedbackPayload, ownerUid });
-  });
-  return feedbackRef.id;
 }
 
 // ── AI-generated individual development plan (IPR) ─────────────────────────
