@@ -12,7 +12,7 @@ export async function getClients() {
   return clients;
 }
 
-// Client creation itself happens server-side (api/create-client.js, using
+// Client creation itself happens server-side (api/create-client.mjs, using
 // the Firebase Admin SDK) — the client SDK can't create other users without
 // signing the current one out. We just carry the current user's idToken so
 // the server can verify the caller is really the superadmin.
