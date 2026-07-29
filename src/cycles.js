@@ -74,6 +74,26 @@ export async function submitFeedback(cycleId, assignmentId, feedbackPayload) {
   return feedbackRef.id;
 }
 
+// ── AI-generated individual development plan (IPR) ─────────────────────────
+//
+// Keyed by employee name (not id) within the cycle — matches how the rest
+// of the app already looks employees up for reports, since some feedback
+// docs (the manual no-invite-link rater flow) don't carry a real employee id.
+
+function iprDocRef(cycleId, employeeName) {
+  return doc(db, 'cycles', cycleId, 'ipr', encodeURIComponent(employeeName));
+}
+
+export async function getSavedIpr(cycleId, employeeName) {
+  if (!cycleId || !employeeName) return null;
+  const snap = await getDoc(iprDocRef(cycleId, employeeName));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveIpr(cycleId, employeeName, text) {
+  await setDoc(iprDocRef(cycleId, employeeName), { text, generatedAt: serverTimestamp() });
+}
+
 export async function createCycle(name) {
   const ref = doc(collection(db, 'cycles'));
   await setDoc(ref, {

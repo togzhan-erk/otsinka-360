@@ -1,6 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { LogoIcon } from './Logo';
 import { TRACK_LABELS, DEFAULT_TRACK } from '../competencies';
+import { getSavedIpr, saveIpr } from '../cycles';
 
 // Below this many non-self raters, individual scores/comments could be
 // traced back to a specific person — keep it a named constant so the
@@ -58,8 +59,12 @@ function pluralizePeople(n) {
   return 'человек';
 }
 
-function EmployeeReport({ employeeName, feedbacks, competencies, department, cycleName, track, onBack, onDeleteFeedback }) {
+function EmployeeReport({ employeeName, feedbacks, competencies, department, cycleName, track, cycleId, readOnly, onBack, onDeleteFeedback }) {
   const reportRef = useRef(null);
+  const [iprText, setIprText] = useState(null);
+  const [iprLoading, setIprLoading] = useState(false);
+  const [iprGenerating, setIprGenerating] = useState(false);
+  const [iprError, setIprError] = useState(null);
 
   const normalizedFeedbacks = feedbacks.map(f => ({ ...f, raterTypeNorm: norm(f.raterType) }));
   const selfFeedbacks = normalizedFeedbacks.filter(f => f.raterTypeNorm === 'Самооценка');
@@ -114,6 +119,78 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
     }
   });
 
+  // ── IPR (individual development plan) ──────────────────────────────────────
+  useEffect(() => {
+    if (!hasEnoughData || !cycleId || !employeeName) {
+      setIprText(null);
+      setIprLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setIprText(null);
+    setIprError(null);
+    setIprLoading(true);
+    getSavedIpr(cycleId, employeeName)
+      .then(saved => {
+        if (!cancelled) {
+          setIprText(saved?.text || null);
+          setIprLoading(false);
+        }
+      })
+      .catch(err => {
+        console.error('[EmployeeReport] Failed to load saved IPR:', err);
+        if (!cancelled) setIprLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycleId, employeeName, hasEnoughData]);
+
+  const handleGenerateIpr = async () => {
+    setIprGenerating(true);
+    setIprError(null);
+    try {
+      const payload = {
+        employeeName,
+        track: trackLabel,
+        averageScore: fmt(overallAvg),
+        competencies: compRows
+          .filter(row => row.teamAvg !== null)
+          .map(row => ({
+            name: row.name,
+            team: Number(row.teamAvg.toFixed(1)),
+            ...(row.selfAvg !== null ? { self: Number(row.selfAvg.toFixed(1)) } : {}),
+          })),
+        strengthsComments: strengthComments.map(c => c.text),
+        growthComments: improveComments.map(c => c.text),
+      };
+
+      const res = await fetch('/api/generate-ipr', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Не удалось сгенерировать ИПР. Попробуйте ещё раз.');
+      }
+
+      setIprText(data.ipr);
+
+      try {
+        await saveIpr(cycleId, employeeName, data.ipr);
+      } catch (saveErr) {
+        console.error('[EmployeeReport] Failed to save IPR:', saveErr);
+        setIprError('ИПР сгенерирован, но не удалось сохранить его — при перезагрузке он может исчезнуть.');
+      }
+    } catch (err) {
+      console.error('[EmployeeReport] IPR generation failed:', err);
+      setIprError(err.message || 'Не удалось сгенерировать ИПР. Попробуйте ещё раз.');
+    } finally {
+      setIprGenerating(false);
+    }
+  };
+
   // ── PDF export ────────────────────────────────────────────────────────────
   const handleDownloadPDF = async () => {
     const { default: html2canvas } = await import('html2canvas');
@@ -125,6 +202,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
       useCORS: true,
       backgroundColor: BRAND.cream,
       logging: false,
+      ignoreElements: (element) => element.classList?.contains('report-no-pdf'),
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -259,7 +337,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                   </>
                 )}
 
-                {/* 6. IDP placeholder */}
+                {/* 6. IDP (AI-generated development plan) */}
                 <div style={{
                   marginTop: '2rem', padding: '1.5rem', borderRadius: 'var(--radius-card)',
                   background: BRAND.primary, color: '#fff',
@@ -275,9 +353,49 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                       Индивидуальный план развития
                     </h3>
                   </div>
-                  <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>
-                    AI-план развития будет сгенерирован на основе результатов (подключается на следующем шаге).
-                  </p>
+
+                  {iprLoading && (
+                    <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>Загрузка…</p>
+                  )}
+
+                  {!iprLoading && iprText && (
+                    <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+                      {iprText}
+                    </p>
+                  )}
+
+                  {!iprLoading && !iprText && (
+                    <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>
+                      {readOnly
+                        ? 'ИПР для этого отчёта ещё не был сгенерирован.'
+                        : 'AI-план развития будет сгенерирован на основе результатов.'}
+                    </p>
+                  )}
+
+                  {!readOnly && !iprLoading && (
+                    <div className="report-no-pdf" style={{ marginTop: '1rem' }}>
+                      {iprError && (
+                        <p style={{ color: '#FBD3C4', fontSize: '0.85rem', marginBottom: '0.6rem' }}>{iprError}</p>
+                      )}
+                      <button
+                        onClick={handleGenerateIpr}
+                        disabled={iprGenerating}
+                        style={iprText ? {
+                          background: 'none', border: 'none', color: 'rgba(250,247,241,0.85)',
+                          fontSize: '0.85rem', cursor: 'pointer', padding: 0, textDecoration: 'underline',
+                          opacity: iprGenerating ? 0.6 : 1,
+                        } : {
+                          background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
+                          padding: '0.55rem 1.15rem', fontSize: '0.88rem', fontWeight: 600,
+                          cursor: 'pointer', opacity: iprGenerating ? 0.7 : 1,
+                        }}
+                      >
+                        {iprGenerating
+                          ? 'Генерируется…'
+                          : iprText ? '↻ Перегенерировать' : '✨ Сгенерировать ИПР'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}
