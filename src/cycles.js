@@ -60,26 +60,31 @@ export async function archiveCycle(cycleId) {
 
 // Writes a feedback doc and, if assignmentId is given, flags that one
 // assignment as completed in the same transaction. The feedback payload
-// itself is untouched (no rater identity in it) — completion is tracked
-// purely on the roleAssignments array, which is how anonymity is kept
-// even though admins can see who has/hasn't responded.
+// itself carries no rater identity — completion is tracked purely on the
+// roleAssignments array, which is how anonymity is kept even though admins
+// can see who has/hasn't responded. Used only by the manual (no invite
+// link) rater flow now — invite-link submissions go through
+// api/submit-feedback.mjs instead, which never touches Firestore from the
+// client at all.
 export async function submitFeedback(cycleId, assignmentId, feedbackPayload) {
   const cycleRef = doc(db, 'cycles', cycleId);
   const feedbackRef = doc(collection(db, 'cycles', cycleId, 'feedback'));
   await runTransaction(db, async (tx) => {
-    if (assignmentId) {
-      const cycleSnap = await tx.get(cycleRef);
-      if (cycleSnap.exists()) {
-        const assignments = cycleSnap.data().roleAssignments || [];
-        const updated = assignments.map(a =>
-          String(a.id) === String(assignmentId)
-            ? { ...a, completed: true, completedAt: new Date() }
-            : a
-        );
-        tx.set(cycleRef, { roleAssignments: updated }, { merge: true });
-      }
+    const cycleSnap = await tx.get(cycleRef);
+    const ownerUid = cycleSnap.exists() ? (cycleSnap.data().ownerUid || null) : null;
+
+    if (assignmentId && cycleSnap.exists()) {
+      const assignments = cycleSnap.data().roleAssignments || [];
+      const updated = assignments.map(a =>
+        String(a.id) === String(assignmentId)
+          ? { ...a, completed: true, completedAt: new Date() }
+          : a
+      );
+      tx.set(cycleRef, { roleAssignments: updated }, { merge: true });
     }
-    tx.set(feedbackRef, feedbackPayload);
+    // ownerUid identifies the cycle's owner (the HR client), not the rater —
+    // it exists so strict per-owner Firestore rules can scope reads to them.
+    tx.set(feedbackRef, { ...feedbackPayload, ownerUid });
   });
   return feedbackRef.id;
 }
@@ -101,7 +106,9 @@ export async function getSavedIpr(cycleId, employeeName) {
 }
 
 export async function saveIpr(cycleId, employeeName, text) {
-  await setDoc(iprDocRef(cycleId, employeeName), { text, generatedAt: serverTimestamp() });
+  const cycleSnap = await getDoc(doc(db, 'cycles', cycleId));
+  const ownerUid = cycleSnap.exists() ? (cycleSnap.data().ownerUid || null) : null;
+  await setDoc(iprDocRef(cycleId, employeeName), { text, generatedAt: serverTimestamp(), ownerUid });
 }
 
 export async function createCycle(name, ownerUid) {
@@ -245,5 +252,60 @@ export async function migrateCycleOwnersIfNeeded(superadminUid) {
     console.log('[cycles] Owner backfill complete.');
   } catch (err) {
     console.error('[cycles] Owner backfill failed:', err);
+  }
+}
+
+// ── One-time backfill: propagate each cycle's own ownerUid down onto its
+// feedback and ipr subcollection documents. Those are separate Firestore
+// documents (not fields on the cycle doc), so strict per-owner security
+// rules need ownerUid on each of them directly to avoid extra get() calls
+// inside the rules. Only touches cycles that already have an owner
+// themselves (i.e. run this after migrateCycleOwnersIfNeeded has had a
+// chance to run), and only sub-documents that don't already have one.
+// Guarded the same way as the other one-time migrations.
+export async function migrateSubDocOwnersIfNeeded() {
+  const migrationRef = doc(db, 'meta', 'subDocOwnerMigration');
+  let wonRace = false;
+  try {
+    await runTransaction(db, async (tx) => {
+      const migSnap = await tx.get(migrationRef);
+      if (migSnap.exists() && migSnap.data().done) return;
+      tx.set(migrationRef, { done: true, migratedAt: serverTimestamp() });
+      wonRace = true;
+    });
+  } catch (err) {
+    console.error('[cycles] Sub-doc owner migration lock transaction failed:', err);
+    return;
+  }
+  if (!wonRace) return;
+
+  console.log('[cycles] Running one-time backfill of feedback/ipr ownerUid...');
+  try {
+    const allCycles = await getDocs(collection(db, 'cycles'));
+    for (const cycleDoc of allCycles.docs) {
+      const ownerUid = cycleDoc.data().ownerUid;
+      if (!ownerUid) continue; // no owner yet on the cycle itself — nothing to propagate
+
+      const feedbackSnap = await getDocs(collection(db, 'cycles', cycleDoc.id, 'feedback'));
+      for (let i = 0; i < feedbackSnap.docs.length; i += 400) {
+        const chunk = feedbackSnap.docs.slice(i, i + 400).filter(fd => !fd.data().ownerUid);
+        if (chunk.length === 0) continue;
+        const batch = writeBatch(db);
+        chunk.forEach(fd => {
+          batch.set(doc(db, 'cycles', cycleDoc.id, 'feedback', fd.id), { ownerUid }, { merge: true });
+        });
+        await batch.commit();
+      }
+
+      const iprSnap = await getDocs(collection(db, 'cycles', cycleDoc.id, 'ipr'));
+      for (const iprDocSnap of iprSnap.docs) {
+        if (!iprDocSnap.data().ownerUid) {
+          await setDoc(doc(db, 'cycles', cycleDoc.id, 'ipr', iprDocSnap.id), { ownerUid }, { merge: true });
+        }
+      }
+    }
+    console.log('[cycles] Sub-doc owner backfill complete.');
+  } catch (err) {
+    console.error('[cycles] Sub-doc owner backfill failed:', err);
   }
 }

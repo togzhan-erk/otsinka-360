@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { serverTimestamp } from 'firebase/firestore';
 import { submitFeedback } from '../cycles';
 
+const DEFAULT_OPEN_QUESTIONS = {
+  strength: 'Что делает хорошо?',
+  improvement: 'Что развивать?',
+};
+
 function BackButton({ onBack }) {
   if (!onBack) return null;
   return (
@@ -11,7 +16,8 @@ function BackButton({ onBack }) {
   );
 }
 
-function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, totalEvaluees, raterType, cycleId, assignmentId }) {
+function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, totalEvaluees, raterType, cycleId, assignmentId, openQuestionLabels }) {
+  const labels = openQuestionLabels || DEFAULT_OPEN_QUESTIONS;
   const [scores, setScores] = useState(
     competencies.reduce((acc, comp) => ({ ...acc, [comp.id]: 3 }), {})
   );
@@ -35,23 +41,43 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, tota
     setSubmitting(true);
     setError('');
 
-    const payload = {
-      evalueeId: evaluee.id,
-      evalueeName: evaluee.name,
-      raterType: raterType || 'unknown',
-      competencyScores: scores,
-      openQuestions: { strength, improvement },
-      submittedAt: serverTimestamp(),
-    };
-    console.log('[RaterForm] Writing to cycle', cycleId, 'feedback collection (assignment:', assignmentId, '):', payload);
-
     try {
-      const docId = await submitFeedback(cycleId, assignmentId, payload);
-      console.log('[RaterForm] Successfully written, doc ID:', docId);
+      if (assignmentId) {
+        // Invite-link flow — goes through the server so the client never
+        // touches Firestore directly (needed for locking Firestore down to
+        // authenticated admins only).
+        console.log('[RaterForm] Submitting via api/submit-feedback for cycle', cycleId, 'assignment', assignmentId);
+        const res = await fetch('/api/submit-feedback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            cycleId,
+            assignmentId,
+            competencyScores: scores,
+            openQuestions: { strength, improvement },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || 'Не удалось сохранить ответ. Попробуйте ещё раз.');
+        }
+      } else {
+        // Manual entry flow (no invite link) — still writes via the client SDK.
+        const payload = {
+          evalueeId: evaluee.id,
+          evalueeName: evaluee.name,
+          raterType: raterType || 'unknown',
+          competencyScores: scores,
+          openQuestions: { strength, improvement },
+          submittedAt: serverTimestamp(),
+        };
+        console.log('[RaterForm] Writing to cycle', cycleId, 'feedback collection (manual flow):', payload);
+        await submitFeedback(cycleId, assignmentId, payload);
+      }
       onSubmit({ competencyScores: scores, openQuestions: { strength, improvement } });
     } catch (err) {
-      console.error('[RaterForm] Firestore write error:', err.code, err.message);
-      setError('Ошибка сохранения: ' + err.message);
+      console.error('[RaterForm] Submit error:', err);
+      setError(err.message || 'Ошибка сохранения');
       setSubmitting(false);
     }
   };
@@ -88,7 +114,7 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, tota
             <h3>Открытые вопросы</h3>
 
             <div className="form-group">
-              <label><strong>Что делает хорошо?</strong> *</label>
+              <label><strong>{labels.strength}</strong> *</label>
               <textarea
                 value={strength}
                 onChange={(e) => setStrength(e.target.value)}
@@ -99,7 +125,7 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, currentIndex, tota
             </div>
 
             <div className="form-group">
-              <label><strong>Что развивать?</strong> *</label>
+              <label><strong>{labels.improvement}</strong> *</label>
               <textarea
                 value={improvement}
                 onChange={(e) => setImprovement(e.target.value)}

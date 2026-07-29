@@ -1,22 +1,4 @@
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-
-// Must match src/auth.js's SUPERADMIN_EMAIL — kept as a separate constant
-// here since this function runs in a different runtime and can't import
-// client-side source.
-const SUPERADMIN_EMAIL = 'elctogzhan@gmail.com';
-
-function getAdminApp() {
-  if (getApps().length > 0) return getApps()[0];
-
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT is not configured');
-  }
-  const serviceAccount = JSON.parse(raw);
-  return initializeApp({ credential: cert(serviceAccount) });
-}
+import { getAdminAuth, getAdminDb, FieldValue, SUPERADMIN_EMAIL } from './_lib/firebaseAdmin.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -39,16 +21,16 @@ export default async function handler(req, res) {
     return;
   }
 
-  let app;
+  let adminAuth;
+  let db;
   try {
-    app = getAdminApp();
+    adminAuth = getAdminAuth();
+    db = getAdminDb();
   } catch (err) {
     console.error('[create-client] Admin SDK init failed:', err.message);
     res.status(500).json({ error: 'Серверная конфигурация не настроена. Обратитесь к администратору.' });
     return;
   }
-
-  const adminAuth = getAuth(app);
 
   let decoded;
   try {
@@ -85,7 +67,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    const db = getFirestore(app);
     await db.collection('clients').doc(userRecord.uid).set({
       uid: userRecord.uid,
       email,

@@ -11,7 +11,7 @@ import { db } from './firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import {
   migrateLegacyDataIfNeeded, migrateEmployeeTracksIfNeeded, migrateCycleOwnersIfNeeded,
-  getActiveCycle, getCycle, saveCycleData, archiveCycle, createCycle,
+  migrateSubDocOwnersIfNeeded, getActiveCycle, getCycle, saveCycleData, archiveCycle, createCycle,
 } from './cycles';
 import { getCompetenciesForTrack, DEFAULT_TRACK } from './competencies';
 import { subscribeToAuthState, logout, isSuperadmin } from './auth';
@@ -61,6 +61,11 @@ function App() {
   const [currentCycleId, setCurrentCycleId] = useState(null);
   const [currentAssignmentId, setCurrentAssignmentId] = useState(null);
   const [currentEvalueeTrack, setCurrentEvalueeTrack] = useState(DEFAULT_TRACK);
+  // Set only by the invite-link path (via api/rater-form) — the server has
+  // already resolved the right competency list and question labels, so
+  // RaterForm doesn't need to re-derive them from a track id for that path.
+  const [raterFormCompetencies, setRaterFormCompetencies] = useState(null);
+  const [raterFormQuestions, setRaterFormQuestions] = useState(null);
   // undefined = auth state still resolving, null = signed out, object = signed in
   const [authUser, setAuthUser] = useState(undefined);
 
@@ -72,32 +77,64 @@ function App() {
     return unsubscribe;
   }, []);
 
-  // On first load: run the one-time legacy-data migration, then if invite
-  // params were captured at module level, resolve the right cycle and open RaterForm.
+  // On first load: if invite params were captured at module level, resolve
+  // the right assignment and open RaterForm. This is the public, unauthenticated
+  // path — it never touches Firestore directly; new-style links (cycle +
+  // assignment) are resolved entirely through api/rater-form. Legacy
+  // migrations only run from the admin flow now (see loadAdminDashboardData).
   useEffect(() => {
     (async () => {
-      try {
-        await migrateLegacyDataIfNeeded();
-        await migrateEmployeeTracksIfNeeded();
-      } catch (err) {
-        console.error('[App] Migration check failed:', err);
-      }
-
-      if (!INVITE.evalueeId) return; // not an invite link
+      const hasNewStyleLink = INVITE.cycleId && INVITE.assignmentId;
+      if (!INVITE.evalueeId && !hasNewStyleLink) return; // not an invite link
 
       setStage('loadingRaterData');
+
+      if (hasNewStyleLink) {
+        try {
+          const res = await fetch(
+            `/api/rater-form?cycleId=${encodeURIComponent(INVITE.cycleId)}&assignmentId=${encodeURIComponent(INVITE.assignmentId)}`
+          );
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            console.warn('[App] rater-form lookup failed:', data?.error);
+            setStage('roleSelector');
+            return;
+          }
+
+          window.history.replaceState({}, '', '/');
+
+          if (data.alreadyCompleted) {
+            setStage('raterAlreadyDone');
+            return;
+          }
+
+          setCurrentCycleId(INVITE.cycleId);
+          setCurrentAssignmentId(INVITE.assignmentId);
+          setCurrentEvaluee(data.evalueeName);
+          setCurrentRaterType(data.relationType);
+          setRaterFormCompetencies(data.competencies || []);
+          setRaterFormQuestions(data.openQuestions || null);
+          setUserRole('rater');
+          setStage('raterForm');
+        } catch (err) {
+          console.error('[App] Error resolving invite via rater-form:', err);
+          setStage('roleSelector');
+        }
+        return;
+      }
+
+      // Legacy links sent before assignment ids existed on invite links —
+      // fall back to the old client-side lookup so they still work.
       try {
-        // Invite links carry their own cycle id so answers land in the right
-        // survey. Older links sent before cycles existed have no ?cycle=
-        // param — fall back to whichever cycle is active today.
         const cycle = (INVITE.cycleId ? await getCycle(INVITE.cycleId) : null) || await getActiveCycle();
         const invite = cycle ? resolveInviteFromProject(cycle) : null;
 
         if (invite && cycle) {
-          console.log('[App] Invite resolved successfully:', invite, 'cycle:', cycle.id);
+          console.log('[App] Invite resolved successfully (legacy path):', invite, 'cycle:', cycle.id);
           setEmployees(cycle.employees || []);
           setCurrentCycleId(cycle.id);
-          setCurrentAssignmentId(INVITE.assignmentId || null);
+          setCurrentAssignmentId(null);
           setCurrentEvaluee(invite.evaluee.name);
           setCurrentEvalueeTrack(invite.evaluee.track || DEFAULT_TRACK);
           setCurrentRaterType(invite.raterTypeValue);
@@ -196,6 +233,11 @@ function App() {
         // cycles that already have an owner.
         await migrateCycleOwnersIfNeeded(user.uid);
       }
+      // Propagates each cycle's ownerUid onto its feedback/ipr sub-documents
+      // (separate Firestore docs, so they need their own ownerUid for
+      // strict per-owner security rules) — safe to run for any admin, since
+      // it only ever touches cycles that already have an owner.
+      await migrateSubDocOwnersIfNeeded();
     } catch (err) {
       console.error('[App] Admin flow: migration check failed:', err);
     }
@@ -320,6 +362,8 @@ function App() {
     setCurrentCycleId(null);
     setCurrentAssignmentId(null);
     setCurrentEvalueeTrack(DEFAULT_TRACK);
+    setRaterFormCompetencies(null);
+    setRaterFormQuestions(null);
   };
 
   return (
@@ -401,7 +445,8 @@ function App() {
         {userRole === 'rater' && stage === 'raterForm' && currentEvaluee && (
           <RaterForm
             evaluee={{ id: currentEvaluee, name: currentEvaluee }}
-            competencies={getCompetenciesForTrack(currentEvalueeTrack)}
+            competencies={raterFormCompetencies || getCompetenciesForTrack(currentEvalueeTrack)}
+            openQuestionLabels={raterFormQuestions}
             employeeType="employee"
             onSubmit={handleRaterSubmitFeedback}
             onBack={navigationStack.length > 0 ? goBack : null}
@@ -415,6 +460,18 @@ function App() {
 
         {userRole === 'rater' && stage === 'thankYou' && (
           <ThankYouScreen onStartOver={handleStartOver} />
+        )}
+
+        {stage === 'raterAlreadyDone' && (
+          <div className="container">
+            <div className="card" style={{ maxWidth: '480px', textAlign: 'center' }}>
+              <h2>Вы уже прошли эту оценку</h2>
+              <p className="subtitle">Спасибо! Ваш ответ уже сохранён — повторно проходить оценку по этой ссылке не нужно.</p>
+              <button onClick={handleStartOver} className="btn btn-primary">
+                ← На главную
+              </button>
+            </div>
+          </div>
         )}
 
         {userRole === 'admin' && authUser && stage === 'adminDashboard' && (

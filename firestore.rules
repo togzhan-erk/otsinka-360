@@ -1,0 +1,122 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Growth 360 — Firestore security rules
+//
+// NOT deployed automatically. Review, then publish manually in the
+// Firebase Console (Firestore Database → Rules) when ready.
+//
+// Model:
+//   - Default: deny everything.
+//   - clients/{uid}      — superadmin-only read; writes only ever happen
+//                           server-side via api/create-client.mjs (Admin
+//                           SDK, which bypasses these rules entirely), so
+//                           there is no client write path at all.
+//   - cycles/{cycleId}    — one HR client's survey cycle. employees and
+//                           roleAssignments live as array FIELDS on this
+//                           same document (not separate collections), so
+//                           scoping the cycle document covers both.
+//     └ feedback/{id}     — individual (anonymous) answers. Separate
+//                           documents, so each one carries its own
+//                           ownerUid — set at write time by
+//                           api/submit-feedback.mjs (invite-link raters,
+//                           via Admin SDK) and by src/cycles.js's
+//                           submitFeedback() (manual rater entry, via the
+//                           client SDK from an authenticated... no, this
+//                           path is currently unauthenticated too — see
+//                           the caveat below).
+//     └ ipr/{employeeKey} — AI-generated development plans, one per
+//                           employee. Also carries its own ownerUid.
+//   - Every other path (meta/*, the legacy top-level projects/active and
+//     feedback/* left over from before cycles existed) is intentionally
+//     left unreachable from the client — nothing reads or writes them
+//     anymore. The one-time migrations that used meta/* run from the
+//     admin flow and must have already completed (they're each guarded to
+//     run only once) before you publish these rules, or they'll simply
+//     no-op going forward, which is fine since they're one-time by design.
+//
+// KNOWN GAP — read before publishing:
+//   The "I'm a rater, no invite link" manual entry flow (RoleSelector →
+//   "Я оценивающий" → pick a name from a dropdown) still reads/writes
+//   Firestore directly from an unauthenticated browser session
+//   (getActiveCycle() / submitFeedback() in src/cycles.js). It was
+//   intentionally left alone in this pass — only the invite-link path was
+//   moved to api/rater-form.mjs + api/submit-feedback.mjs. Publishing
+//   these rules as-is will make that manual-entry path stop working
+//   (empty employee list, failed submissions), since it has no
+//   request.auth to satisfy the ownerUid check below. Either stop
+//   offering that entry point, or ask for it to be converted to a server
+//   function too, before publishing.
+// ─────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Deny by default — every allow below is an explicit exception.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Directory of HR-client accounts, visible only to the superadmin.
+    // Created exclusively by api/create-client.mjs via the Admin SDK.
+    match /clients/{clientId} {
+      allow read: if request.auth != null
+                  && request.auth.token.email == 'elctogzhan@gmail.com';
+      allow write: if false;
+    }
+
+    // Survey cycles — and everything nested under them — scoped to
+    // whichever HR client owns the cycle (ownerUid). Admins only ever
+    // read/write their own cycles; there is no cross-owner access, and no
+    // unauthenticated access at all (raters go through the Admin-SDK-backed
+    // serverless functions instead, which are not subject to these rules).
+    match /cycles/{cycleId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.ownerUid;
+
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.ownerUid;
+
+      // Updates (saveCycleData, archiveCycle, deleting an assignment, etc.)
+      // are allowed for the current owner, but the update itself can't
+      // reassign ownership to someone else.
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid
+                    && request.resource.data.ownerUid == resource.data.ownerUid;
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+      match /feedback/{feedbackId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+        allow create: if request.auth != null
+                      && request.auth.uid == request.resource.data.ownerUid;
+
+        allow update: if request.auth != null
+                      && request.auth.uid == resource.data.ownerUid
+                      && request.resource.data.ownerUid == resource.data.ownerUid;
+
+        // Admins can delete an individual (anonymous) answer from a report.
+        allow delete: if request.auth != null
+                      && request.auth.uid == resource.data.ownerUid;
+      }
+
+      match /ipr/{iprId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+        allow create: if request.auth != null
+                      && request.auth.uid == request.resource.data.ownerUid;
+
+        allow update: if request.auth != null
+                      && request.auth.uid == resource.data.ownerUid
+                      && request.resource.data.ownerUid == resource.data.ownerUid;
+
+        allow delete: if request.auth != null
+                      && request.auth.uid == resource.data.ownerUid;
+      }
+    }
+  }
+}
