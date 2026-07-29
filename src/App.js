@@ -392,7 +392,6 @@ function App() {
             department={reportData.department}
             cycleName={reportData.cycleName}
             cycleId={reportData.cycleId}
-            readOnly={reportData.readOnly}
             onBack={navigationStack.length > 0 ? goBack : null}
             onDeleteFeedback={reportData.readOnly ? undefined : handleDeleteFeedback}
           />

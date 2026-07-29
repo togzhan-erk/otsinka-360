@@ -59,7 +59,7 @@ function pluralizePeople(n) {
   return 'человек';
 }
 
-function EmployeeReport({ employeeName, feedbacks, competencies, department, cycleName, track, cycleId, readOnly, onBack, onDeleteFeedback }) {
+function EmployeeReport({ employeeName, feedbacks, competencies, department, cycleName, track, cycleId, onBack, onDeleteFeedback }) {
   const reportRef = useRef(null);
   const [iprText, setIprText] = useState(null);
   const [iprLoading, setIprLoading] = useState(false);
@@ -366,13 +366,14 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
 
                   {!iprLoading && !iprText && (
                     <p style={{ margin: 0, color: 'rgba(250,247,241,0.75)', fontSize: '0.9rem' }}>
-                      {readOnly
-                        ? 'ИПР для этого отчёта ещё не был сгенерирован.'
-                        : 'AI-план развития будет сгенерирован на основе результатов.'}
+                      AI-план развития будет сгенерирован на основе результатов.
                     </p>
                   )}
 
-                  {!readOnly && !iprLoading && (
+                  {/* Generation is allowed in both the active cycle and read-only
+                      archive views — only the underlying scores/comments (via
+                      onDeleteFeedback) stay locked for archived cycles. */}
+                  {!iprLoading && (
                     <div className="report-no-pdf" style={{ marginTop: '1rem' }}>
                       {iprError && (
                         <p style={{ color: '#FBD3C4', fontSize: '0.85rem', marginBottom: '0.6rem' }}>{iprError}</p>
