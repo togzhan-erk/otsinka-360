@@ -6,37 +6,77 @@ rules_version = '2';
 // NOT deployed automatically. Review, then publish manually in the
 // Firebase Console (Firestore Database → Rules) when ready.
 //
+// Verified against the actual code (2026-07-30) — every path and field
+// below was checked against the real read/write call sites, not assumed:
+//   - Write:  api/submit-feedback.mjs  → cycles/{cycleId}/feedback/{id},
+//             with ownerUid = the cycle's own ownerUid.
+//             src/cycles.js saveIpr()  → cycles/{cycleId}/ipr/{key},
+//             with ownerUid = the cycle's own ownerUid. (api/generate-ipr.mjs
+//             itself never touches Firestore — it only calls Anthropic and
+//             returns text/JSON; the client saves it via saveIpr().)
+//   - Read:   AdminDashboard.jsx and src/cycles.js (getCycleFeedback,
+//             getSavedIpr) read from those exact same two paths.
+//
 // Model:
 //   - Default: deny everything.
 //   - clients/{uid}      — superadmin-only read; writes only ever happen
 //                           server-side via api/create-client.mjs (Admin
 //                           SDK, which bypasses these rules entirely), so
 //                           there is no client write path at all.
+//   - meta/{id}           — one-time migration lock docs (src/cycles.js:
+//                           migrateLegacyDataIfNeeded, migrateEmployeeTracksIfNeeded,
+//                           migrateCycleOwnersIfNeeded, migrateSubDocOwnersIfNeeded).
+//                           These run from the admin flow on every login and
+//                           read/write meta/* directly with the signed-in
+//                           user's own credentials (no ownerUid concept
+//                           applies here — it's global bookkeeping, not
+//                           per-client data) — so any authenticated user
+//                           needs read/write here, otherwise every admin
+//                           login logs a permission error even after the
+//                           migrations have already completed. The docs
+//                           themselves hold nothing but a boolean + a
+//                           timestamp, and every write is idempotent.
 //   - cycles/{cycleId}    — one HR client's survey cycle. employees and
 //                           roleAssignments live as array FIELDS on this
 //                           same document (not separate collections), so
-//                           scoping the cycle document covers both.
-//     └ feedback/{id}     — individual (anonymous) answers. Separate
-//                           documents, so each one carries its own
-//                           ownerUid, set at write time by
-//                           api/submit-feedback.mjs (Admin SDK — the only
-//                           way a feedback doc is ever created; raters
-//                           never write to Firestore directly).
-//     └ ipr/{employeeKey} — AI-generated development plans, one per
-//                           employee. Also carries its own ownerUid.
-//   - Every other path (meta/*, the legacy top-level projects/active and
-//     feedback/* left over from before cycles existed) is intentionally
-//     left unreachable from the client — nothing reads or writes them
-//     anymore. The one-time migrations that used meta/* run from the
-//     admin flow and must have already completed (they're each guarded to
-//     run only once) before you publish these rules, or they'll simply
-//     no-op going forward, which is fine since they're one-time by design.
+//                           scoping the cycle document covers both. Admin
+//                           reads (getActiveCycle/getArchivedCycles) always
+//                           add a matching where('ownerUid','==', uid)
+//                           filter, so resource.data-based rules work fine
+//                           here for both get() and list queries.
+//     └ feedback/{id}     — individual (anonymous) answers.
+//     └ ipr/{employeeKey} — AI-generated development plans, one per employee.
 //
-// There is no more manual "pick anyone and evaluate them" rater entry —
-// the only way to reach the evaluation form is a personal invite link
-// (?cycle=...&assignment=...), which is resolved entirely through
-// api/rater-form.mjs + api/submit-feedback.mjs (Admin SDK, not subject to
-// these rules). The client-side rater flow makes zero Firestore calls.
+//       IMPORTANT: unlike cycles/{cycleId} itself, the admin reads these two
+//       subcollections with NO where('ownerUid', ...) filter — AdminDashboard.jsx
+//       live-subscribes to the *entire* feedback subcollection
+//       (onSnapshot(collection(db,'cycles',cycleId,'feedback'))) and
+//       getCycleFeedback()/getSavedIpr() in src/cycles.js do the same for
+//       both. Firestore rejects unfiltered list/watch queries against a
+//       rule of the form `resource.data.ownerUid == request.auth.uid`,
+//       because it can't statically prove every possible result satisfies
+//       it — that shape of rule only works when the query itself carries a
+//       matching equality filter. Rather than add ownerUid filters to those
+//       reads (touching several call sites for no real gain, since a
+//       feedback/ipr doc is only ever reachable through a cycleId the admin
+//       already legitimately owns), these two subcollections instead
+//       inherit authorization straight from the parent cycle document via
+//       get(), keyed only by the cycleId path segment — which works
+//       identically for get(), list, and write requests, with no
+//       per-document ownerUid check needed. (ownerUid is still stamped on
+//       every feedback/ipr document at write time and backfilled by
+//       migrateSubDocOwnersIfNeeded for existing ones — kept as useful
+//       metadata, just no longer load-bearing for these rules.)
+//
+//   - Every other path (the legacy top-level projects/active and feedback/*
+//     left over from before cycles existed) is intentionally left
+//     unreachable from the client — nothing reads or writes them anymore.
+//
+// There is no manual "pick anyone and evaluate them" rater entry — the only
+// way to reach the evaluation form is a personal invite link
+// (?cycle=...&assignment=...), resolved entirely through api/rater-form.mjs
+// + api/submit-feedback.mjs (Admin SDK, not subject to these rules). The
+// client-side rater flow makes zero Firestore calls.
 // ─────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -55,11 +95,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Survey cycles — and everything nested under them — scoped to
-    // whichever HR client owns the cycle (ownerUid). Admins only ever
-    // read/write their own cycles; there is no cross-owner access, and no
-    // unauthenticated access at all (raters go through the Admin-SDK-backed
-    // serverless functions instead, which are not subject to these rules).
+    // One-time migration lock docs — see the model note above. Not
+    // per-owner data; any signed-in admin may read/write them.
+    match /meta/{metaId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Survey cycles — scoped to whichever HR client owns the cycle
+    // (ownerUid). Admins only ever read/write their own cycles; there is no
+    // cross-owner access, and no unauthenticated access at all (raters go
+    // through the Admin-SDK-backed serverless functions instead, which are
+    // not subject to these rules).
     match /cycles/{cycleId} {
       allow read: if request.auth != null
                   && request.auth.uid == resource.data.ownerUid;
@@ -77,35 +123,22 @@ service cloud.firestore {
       allow delete: if request.auth != null
                     && request.auth.uid == resource.data.ownerUid;
 
+      // feedback/ and ipr/ inherit access from the parent cycle document
+      // (see the long comment above) instead of checking their own
+      // ownerUid field, so AdminDashboard's unfiltered
+      // onSnapshot(collection(...feedback)) listener and
+      // getCycleFeedback()/getSavedIpr() keep working under these rules
+      // exactly as the code is written today.
       match /feedback/{feedbackId} {
-        allow read: if request.auth != null
-                    && request.auth.uid == resource.data.ownerUid;
-
-        allow create: if request.auth != null
-                      && request.auth.uid == request.resource.data.ownerUid;
-
-        allow update: if request.auth != null
-                      && request.auth.uid == resource.data.ownerUid
-                      && request.resource.data.ownerUid == resource.data.ownerUid;
-
-        // Admins can delete an individual (anonymous) answer from a report.
-        allow delete: if request.auth != null
-                      && request.auth.uid == resource.data.ownerUid;
+        allow read, write: if request.auth != null
+                            && request.auth.uid ==
+                               get(/databases/$(database)/documents/cycles/$(cycleId)).data.ownerUid;
       }
 
       match /ipr/{iprId} {
-        allow read: if request.auth != null
-                    && request.auth.uid == resource.data.ownerUid;
-
-        allow create: if request.auth != null
-                      && request.auth.uid == request.resource.data.ownerUid;
-
-        allow update: if request.auth != null
-                      && request.auth.uid == resource.data.ownerUid
-                      && request.resource.data.ownerUid == resource.data.ownerUid;
-
-        allow delete: if request.auth != null
-                      && request.auth.uid == resource.data.ownerUid;
+        allow read, write: if request.auth != null
+                            && request.auth.uid ==
+                               get(/databases/$(database)/documents/cycles/$(cycleId)).data.ownerUid;
       }
     }
   }
