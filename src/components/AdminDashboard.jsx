@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import {
   LayoutDashboard, Settings, Mail, BarChart3, Archive, Building2,
   Plus, LogOut, Bell, Copy, Check, CheckCircle2, Trash2, Download,
-  FileText, ArrowLeft,
+  FileText, ArrowLeft, Clock, Circle,
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
@@ -27,6 +27,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const [showNewSurveyModal, setShowNewSurveyModal] = useState(false);
   const [liveRoleAssignments, setLiveRoleAssignments] = useState(null);
   const [liveCycleName, setLiveCycleName] = useState(null);
+  const [liveCycleCreatedAt, setLiveCycleCreatedAt] = useState(null);
   const [setupUploadedEmployees, setSetupUploadedEmployees] = useState(null);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
     if (!cycleId) {
       setLiveRoleAssignments(null);
       setLiveCycleName(null);
+      setLiveCycleCreatedAt(null);
       return;
     }
     const unsubscribe = onSnapshot(doc(db, 'cycles', cycleId), (snap) => {
@@ -66,6 +68,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         const data = snap.data();
         setLiveRoleAssignments(data.roleAssignments || []);
         setLiveCycleName(data.name || '');
+        setLiveCycleCreatedAt(data.createdAt || null);
       }
     });
     return unsubscribe;
@@ -207,8 +210,20 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const completionPct = totalAssignments > 0 ? Math.round((completedCount / totalAssignments) * 100) : 0;
   const pendingCount = totalAssignments - completedCount;
   const cycleName = liveCycleName ?? '';
+  const cycleYear = liveCycleCreatedAt?.toDate ? liveCycleCreatedAt.toDate().getFullYear() : new Date().getFullYear();
   const hasEmployees = employees.length > 0;
   const isSuperadminUser = isSuperadmin(currentUser);
+  const companyName = currentUser?.displayName || currentUser?.email || '';
+
+  // Home status badge — three real states, no invented ones: an active
+  // cycle either hasn't been set up with employees yet ("Черновик"), has
+  // employees and is out collecting responses ("Идёт сбор оценок"), or
+  // there's no active cycle at all yet.
+  const homeStatus = !cycleId
+    ? { label: 'Нет активного опроса', color: 'var(--color-text-muted)', bg: 'var(--color-surface-tint)' }
+    : !hasEmployees
+      ? { label: 'Черновик', color: 'var(--color-text-muted)', bg: 'var(--color-surface-tint)' }
+      : { label: 'Идёт сбор оценок', color: 'var(--color-leaf)', bg: 'rgba(63, 97, 82, 0.1)' };
 
   const grouped = groupFeedbackByEvaluee(feedbackList);
 
@@ -245,11 +260,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         <div className="admin-tabs" style={{ marginTop: '1.5rem' }}>
           <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
             <LayoutDashboard size={18} strokeWidth={1.75} />
-            Обзор
+            Главная
           </button>
           <button className={`tab-btn ${activeTab === 'setup' ? 'active' : ''}`} onClick={() => setActiveTab('setup')}>
             <Settings size={18} strokeWidth={1.75} />
-            Настройка
+            Настройка опроса
           </button>
           <button className={`tab-btn ${activeTab === 'invitations' ? 'active' : ''}`} onClick={() => setActiveTab('invitations')}>
             <Mail size={18} strokeWidth={1.75} />
@@ -271,57 +286,78 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           )}
         </div>
 
-        {/* ── Overview ── */}
+        {/* ── Home ── */}
         {activeTab === 'overview' && (
           <div style={{ marginTop: '2rem' }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+              flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem',
+            }}>
+              <div>
+                <h3 style={{ margin: 0 }}>{companyName || 'Ваша компания'}</h3>
+                <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
+                  {cycleId
+                    ? `Активный опрос: ${cycleName || 'Без названия'} · ${cycleYear}`
+                    : 'Активного опроса пока нет'}
+                </p>
+              </div>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                padding: '0.4rem 0.9rem', borderRadius: 999,
+                fontSize: '0.82rem', fontWeight: 600,
+                background: homeStatus.bg, color: homeStatus.color,
+              }}>
+                {homeStatus.label}
+              </span>
+            </div>
+
             {!hasEmployees ? (
-              <EmptyCycleNotice onGoToSetup={goToSetup} />
+              <div style={{
+                padding: '3rem 1.5rem', textAlign: 'center', background: '#fff',
+                border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-card)',
+              }}>
+                <h3 style={{ marginTop: 0 }}>Начните здесь</h3>
+                <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
+                  Загрузите список сотрудников, чтобы запустить опрос
+                </p>
+                <button className="btn btn-primary btn-sm" onClick={goToSetup}>
+                  <Settings size={15} strokeWidth={2} />
+                  Перейти в настройку опроса
+                </button>
+              </div>
             ) : (
-              <>
-                {totalAssignments > 0 && (
-                  <ProgressWidget completed={completedCount} total={totalAssignments} pct={completionPct} />
-                )}
-                <div className="stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-number">{employees.length}</div>
-                    <div className="stat-label">Участников</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-number">{totalAssignments}</div>
-                    <div className="stat-label">Оценок назначено</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-number">{feedbackList.length}</div>
-                    <div className="stat-label">Получено ответов</div>
-                  </div>
-                </div>
-                <div style={{ marginTop: '1.5rem' }}>
-                  <h4>Сотрудники в проекте:</h4>
-                  <ul style={{ paddingLeft: '1.5rem', color: 'var(--color-text)' }}>
-                    {employees.map(emp => (
-                      <li key={emp.id}>{emp.name} — {emp.email}</li>
-                    ))}
-                  </ul>
-                </div>
-              </>
+              <HomeSummary
+                employeesCount={employees.length}
+                totalAssignments={totalAssignments}
+                completedCount={completedCount}
+                completionPct={completionPct}
+                onViewResults={() => setActiveTab('results')}
+                onSendReminders={() => setActiveTab('invitations')}
+              />
             )}
           </div>
         )}
 
         {/* ── Setup (upload employees + assign raters + tracks) ── */}
         {activeTab === 'setup' && (
-          <SetupTab
-            employees={employees}
-            roleAssignments={effectiveAssignments}
-            uploadedEmployees={setupUploadedEmployees}
-            onUpload={(emps) => setSetupUploadedEmployees(emps)}
-            onBackToUpload={() => setSetupUploadedEmployees(null)}
-            onAssignmentComplete={(assignments, employeesWithTracks) => {
-              setSetupUploadedEmployees(null);
-              onSetupComplete(assignments, employeesWithTracks);
-              setActiveTab('overview');
-            }}
-          />
+          <div style={{ marginTop: '2rem' }}>
+            <h3 style={{ margin: 0 }}>Настройка опроса</h3>
+            <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
+              Загрузите сотрудников и назначьте, кто кого оценивает
+            </p>
+            <SetupTab
+              employees={employees}
+              roleAssignments={effectiveAssignments}
+              uploadedEmployees={setupUploadedEmployees}
+              onUpload={(emps) => setSetupUploadedEmployees(emps)}
+              onBackToUpload={() => setSetupUploadedEmployees(null)}
+              onAssignmentComplete={(assignments, employeesWithTracks) => {
+                setSetupUploadedEmployees(null);
+                onSetupComplete(assignments, employeesWithTracks);
+                setActiveTab('overview');
+              }}
+            />
+          </div>
         )}
 
         {/* ── Invitations ── */}
@@ -335,8 +371,13 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                   <ProgressWidget completed={completedCount} total={totalAssignments} pct={completionPct} />
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                  <h3 style={{ margin: 0 }}>Приглашения на оценку</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>Приглашения на оценку</h3>
+                    <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
+                      Отправьте персональные ссылки и следите за прохождением
+                    </p>
+                  </div>
                   <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                     {pendingCount > 0 && (
                       <button className="btn btn-secondary btn-sm" onClick={handleRemindAllPending}>
@@ -357,7 +398,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                 </div>
 
                 {totalAssignments === 0 && (
-                  <p style={{ color: 'var(--color-text-muted)' }}>Назначений нет. Перейдите во вкладку «Настройка» и создайте назначения.</p>
+                  <p style={{ color: 'var(--color-text-muted)' }}>Назначений нет. Перейдите во вкладку «Настройка опроса» и создайте назначения.</p>
                 )}
 
                 {effectiveAssignments.map(assignment => {
@@ -464,8 +505,13 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
               <EmptyCycleNotice onGoToSetup={goToSetup} />
             ) : (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h3 style={{ margin: 0 }}>Результаты оценок</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>Результаты оценок</h3>
+                    <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
+                      Отчёты по каждому сотруднику и планы развития
+                    </p>
+                  </div>
                   {feedbackList.length > 0 && (
                     <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}>
                       <Download size={15} strokeWidth={2} />
@@ -566,11 +612,11 @@ function EmptyCycleNotice({ onGoToSetup }) {
       border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-card)',
     }}>
       <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.25rem' }}>
-        Пока нет данных. Перейдите во вкладку «Настройка» и загрузите список сотрудников.
+        Пока нет данных. Перейдите во вкладку «Настройка опроса» и загрузите список сотрудников.
       </p>
       <button className="btn btn-primary btn-sm" onClick={onGoToSetup}>
         <Settings size={15} strokeWidth={2} />
-        Перейти в «Настройку»
+        Перейти в настройку опроса
       </button>
     </div>
   );
@@ -594,6 +640,127 @@ function ProgressWidget({ completed, total, pct }) {
         />
       </div>
     </div>
+  );
+}
+
+// ── Home summary (metrics row + "Что дальше" checklist) ────────────────────
+//
+// Every number here comes straight from the active cycle's real state —
+// nothing is invented. The checklist just narrates that same state as a
+// sequence of steps.
+
+function HomeMetricCard({ label, value, sub, children }) {
+  return (
+    <div style={{
+      background: '#fff', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+      padding: '1.5rem', textAlign: 'center',
+    }}>
+      <div style={{
+        fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.06em',
+        color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontFamily: "'Fraunces', Georgia, serif", fontSize: '2.2rem', fontWeight: 700,
+        color: 'var(--color-primary)', lineHeight: 1,
+      }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '0.35rem' }}>{sub}</div>}
+      {children}
+    </div>
+  );
+}
+
+const CHECKLIST_STATUS_STYLE = {
+  done: { Icon: CheckCircle2, color: 'var(--color-success)' },
+  inProgress: { Icon: Clock, color: 'var(--color-accent)' },
+  pending: { Icon: Circle, color: 'var(--color-text-muted)' },
+};
+
+function ChecklistRow({ status, text }) {
+  const { Icon, color } = CHECKLIST_STATUS_STYLE[status];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.55rem 0' }}>
+      <Icon size={18} strokeWidth={2} style={{ color, flexShrink: 0 }} />
+      <span style={{
+        fontSize: '0.92rem',
+        color: status === 'pending' ? 'var(--color-text-muted)' : 'var(--color-text)',
+        fontWeight: status === 'done' ? 500 : 400,
+      }}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
+function HomeSummary({ employeesCount, totalAssignments, completedCount, completionPct, onViewResults, onSendReminders }) {
+  const hasAssignments = totalAssignments > 0;
+  const allDone = hasAssignments && completionPct === 100;
+
+  const checklist = [
+    {
+      key: 'employees',
+      status: employeesCount > 0 ? 'done' : 'pending',
+      text: 'Сотрудники загружены',
+    },
+    {
+      key: 'assignments',
+      status: hasAssignments ? 'done' : 'pending',
+      text: 'Назначения готовы',
+    },
+    {
+      key: 'collecting',
+      status: !hasAssignments ? 'pending' : allDone ? 'done' : 'inProgress',
+      text: !hasAssignments
+        ? 'Сбор оценок ещё не начат'
+        : allDone
+          ? `Все оценки собраны — ${completionPct}%`
+          : `Идёт сбор оценок — ${completionPct}% прошли`,
+    },
+    {
+      key: 'results',
+      status: completedCount > 0 ? 'inProgress' : 'pending',
+      text: 'Результаты доступны по мере прохождения',
+    },
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+        <HomeMetricCard label="Сотрудников" value={employeesCount} />
+        <HomeMetricCard label="Назначений" value={totalAssignments} />
+        <HomeMetricCard label="Прошли оценку" value={`${completionPct}%`}>
+          <div style={{ background: 'var(--color-border)', borderRadius: 999, height: 6, overflow: 'hidden', marginTop: '0.65rem' }}>
+            <div style={{
+              width: `${completionPct}%`, height: '100%', borderRadius: 999,
+              background: 'var(--color-accent)', transition: 'width 0.3s ease',
+            }} />
+          </div>
+        </HomeMetricCard>
+      </div>
+
+      <div style={{
+        background: '#fff', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+        padding: '1.5rem',
+      }}>
+        <h3 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Что дальше</h3>
+        <div>
+          {checklist.map(item => (
+            <ChecklistRow key={item.key} status={item.status} text={item.text} />
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary btn-sm" onClick={onViewResults}>
+            Смотреть результаты
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={onSendReminders}>
+            Отправить напоминания
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -809,7 +976,10 @@ function ArchiveTab({ onOpenReport, ownerUid }) {
 
   return (
     <div style={{ marginTop: '2rem' }}>
-      <h3 style={{ marginTop: 0 }}>Архив опросов</h3>
+      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Архив опросов</h3>
+      <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
+        Прошлые опросы — можно открыть или возобновить
+      </p>
 
       {loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
 
@@ -904,7 +1074,10 @@ function ClientsTab({ currentUser }) {
 
   return (
     <div style={{ marginTop: '2rem' }}>
-      <h3 style={{ marginTop: 0 }}>Клиенты</h3>
+      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Клиенты</h3>
+      <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
+        Управление доступами клиентов
+      </p>
 
       <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.25rem', marginBottom: '1.75rem' }}>
         <h4 style={{ marginTop: 0 }}>Новый клиент</h4>
