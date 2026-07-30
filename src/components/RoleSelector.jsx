@@ -1,4 +1,5 @@
 import React from 'react';
+import { Briefcase, Check } from 'lucide-react';
 
 // Raters only ever arrive via their personal invite link (?cycle=...&assignment=...),
 // which is resolved before this screen ever renders — there is no manual
@@ -16,14 +17,14 @@ function RoleSelector({ onSelectAdmin }) {
             className="role-card"
             onClick={onSelectAdmin}
           >
-            <div className="role-icon">👔</div>
+            <div className="role-icon"><Briefcase size={26} strokeWidth={1.75} /></div>
             <h3>Я администратор (HRD)</h3>
             <p>Вы управляете процессом оценки</p>
             <ul className="role-features">
-              <li>✓ Загружаете список сотрудников</li>
-              <li>✓ Назначаете рейтеров</li>
-              <li>✓ Видите все результаты</li>
-              <li>✓ Генерируете ИПР</li>
+              <li><Check size={16} strokeWidth={2} /> Загружаете список сотрудников</li>
+              <li><Check size={16} strokeWidth={2} /> Назначаете рейтеров</li>
+              <li><Check size={16} strokeWidth={2} /> Видите все результаты</li>
+              <li><Check size={16} strokeWidth={2} /> Генерируете ИПР</li>
             </ul>
           </button>
         </div>

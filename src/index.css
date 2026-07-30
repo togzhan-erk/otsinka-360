@@ -1,21 +1,30 @@
 :root {
+  /* Brand tokens — keep in sync with src/competencies.js's report BRAND
+     object and src/components/Logo.jsx's inline SVG fills. */
   --color-bg: #FAF7F1;
   --color-primary: #2F4A3E;
-  --color-surface: #EFF2E9;
+  --color-leaf: #3F6152;
+  --color-surface: #FFFFFF;
+  --color-surface-tint: #EFF2E9;
   --color-accent: #E29147;
   --color-accent-hover: #C97D38;
   --color-success: #5B8C6E;
   --color-success-hover: #4A7A5D;
   --color-danger: #C15B4A;
   --color-danger-hover: #A84939;
-  --color-text: #2B2620;
-  --color-text-muted: #6B6459;
-  --color-border: #DDD8CF;
-  --radius-card: 16px;
+  --color-text: #2B2B2B;
+  --color-text-muted: #8A7E6B;
+  --color-border: #E5DFD3;
+  --radius-card: 12px;
   --radius-btn: 8px;
   --radius-input: 10px;
-  --shadow-card: 0 2px 12px rgba(43, 38, 32, 0.08);
-  --shadow-hover: 0 8px 28px rgba(43, 38, 32, 0.14);
+  --shadow-card: 0 1px 3px rgba(43, 38, 32, 0.06);
+  --shadow-hover: 0 6px 20px rgba(43, 38, 32, 0.1);
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
 }
 
 * {

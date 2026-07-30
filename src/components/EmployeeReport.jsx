@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { ArrowLeft, Sparkles, RefreshCw, Download, Trash2 } from 'lucide-react';
 import { LogoIcon } from './Logo';
 import { TRACK_LABELS, DEFAULT_TRACK } from '../competencies';
 import { getSavedIpr, saveIpr } from '../cycles';
@@ -250,7 +251,8 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
             marginBottom: '1.25rem',
           }}
         >
-          ← Назад к результатам
+          <ArrowLeft size={16} strokeWidth={2} />
+          Назад к результатам
         </button>
 
         {/* ── REPORT CARD (captured for PDF) ──────────────────────────────── */}
@@ -396,15 +398,27 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                           background: 'none', border: 'none', color: 'rgba(250,247,241,0.85)',
                           fontSize: '0.85rem', cursor: 'pointer', padding: 0, textDecoration: 'underline',
                           opacity: iprGenerating ? 0.6 : 1,
+                          display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
                         } : {
                           background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
                           padding: '0.55rem 1.15rem', fontSize: '0.88rem', fontWeight: 600,
                           cursor: 'pointer', opacity: iprGenerating ? 0.7 : 1,
+                          display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                         }}
                       >
-                        {iprGenerating
-                          ? 'Генерируется…'
-                          : iprData ? '↻ Перегенерировать' : '✨ Сгенерировать ИПР'}
+                        {iprGenerating ? (
+                          'Генерируется…'
+                        ) : iprData ? (
+                          <>
+                            <RefreshCw size={13} strokeWidth={2} />
+                            Перегенерировать
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={15} strokeWidth={2} />
+                            Сгенерировать ИПР
+                          </>
+                        )}
                       </button>
                     </div>
                   )}
@@ -429,7 +443,8 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                 display: 'flex', alignItems: 'center', gap: '0.5rem',
               }}
             >
-              ⬇ Скачать PDF
+              <Download size={16} strokeWidth={2} />
+              Скачать PDF
             </button>
           )}
         </div>
@@ -447,7 +462,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                   alignItems: 'center',
                   padding: '0.4rem 0.6rem',
                   marginTop: '0.4rem',
-                  background: 'var(--color-surface)',
+                  background: 'var(--color-surface-tint)',
                   borderRadius: '6px',
                   fontSize: '0.85rem',
                   color: BRAND.muted,
@@ -457,17 +472,9 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                 <button
                   onClick={() => onDeleteFeedback(row.raw)}
                   title="Удалить эту оценку"
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    padding: '0.2rem 0.5rem',
-                    fontSize: '0.85rem',
-                    color: 'var(--color-danger)',
-                  }}
+                  className="btn btn-icon btn-danger-ghost"
                 >
-                  🗑
+                  <Trash2 size={14} strokeWidth={2} />
                 </button>
               </div>
             ))}
@@ -558,7 +565,7 @@ function CommentCard({ label, text, index }) {
   return (
     <div style={{
       padding: '0.875rem 1rem',
-      background: index % 2 === 0 ? '#fff' : 'var(--color-surface)',
+      background: index % 2 === 0 ? '#fff' : 'var(--color-surface-tint)',
       borderRadius: 10,
       marginBottom: '0.5rem',
       border: '1px solid var(--color-border)',

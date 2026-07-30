@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ArrowLeft, ArrowRight, Wand2, Trash2 } from 'lucide-react';
 import { STANDARD_TRACK, TOP_TRACK, TRACK_LABELS, DEFAULT_TRACK } from '../competencies';
 
 const RELATIONSHIP_TYPES = [
@@ -13,8 +14,9 @@ const LARGE_TEAM_THRESHOLD = 8;
 function BackButton({ onBack }) {
   if (!onBack) return null;
   return (
-    <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#6f6f77', cursor: 'pointer', fontSize: '0.95rem', padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-      ← Назад
+    <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+      <ArrowLeft size={16} strokeWidth={2} />
+      Назад
     </button>
   );
 }
@@ -153,7 +155,7 @@ function RoleAssignment({ employees, onComplete, onBack }) {
         {employees.length > 0 && (
           <div style={{ marginBottom: '1.5rem' }}>
             <h3 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Треки сотрудников</h3>
-            <p style={{ color: '#6f6f77', fontSize: '0.85rem', marginTop: 0 }}>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: 0 }}>
               Определяет, какой набор компетенций увидят все, кто оценивает этого сотрудника.
             </p>
             {employees.map(emp => (
@@ -161,7 +163,7 @@ function RoleAssignment({ employees, onComplete, onBack }) {
                 key={emp.id}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.6rem 0.75rem', border: '1px solid #e5e5e7', borderRadius: '8px',
+                  padding: '0.6rem 0.75rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-btn)',
                   marginBottom: '0.5rem', gap: '0.75rem', flexWrap: 'wrap',
                 }}
               >
@@ -180,20 +182,21 @@ function RoleAssignment({ employees, onComplete, onBack }) {
           </div>
         )}
 
-        <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #e5e5e7', borderRadius: '8px' }}>
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-btn)' }}>
           <h3 style={{ marginTop: 0, fontSize: '1.05rem' }}>Автоматическое назначение</h3>
           {hasManagerEmailData ? (
             <>
-              <p style={{ color: '#6f6f77', fontSize: '0.85rem' }}>
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
                 Построит самооценку, руководителя, коллег (тех же подчинённых) и подчинённых для каждого
                 сотрудника по колонке «Email руководителя». Уже добавленные назначения не дублируются.
               </p>
-              <button onClick={handleAutoGenerate} className="btn btn-success">
-                🪄 Сгенерировать назначения автоматически
+              <button onClick={handleAutoGenerate} className="btn btn-secondary">
+                <Wand2 size={16} strokeWidth={2} />
+                Сгенерировать назначения автоматически
               </button>
             </>
           ) : (
-            <p style={{ color: '#6f6f77', fontSize: '0.9rem' }}>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
               В загруженном файле нет колонки «Email руководителя», поэтому автоматическое назначение
               недоступно. Назначьте оценивающих вручную ниже.
             </p>
@@ -259,7 +262,7 @@ function RoleAssignment({ employees, onComplete, onBack }) {
             </div>
 
             {selectedRater && (
-              <button onClick={handleAdd} className="btn btn-success">
+              <button onClick={handleAdd} className="btn btn-secondary">
                 + Добавить
               </button>
             )}
@@ -276,33 +279,31 @@ function RoleAssignment({ employees, onComplete, onBack }) {
                 key={a.id}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.5rem 0.75rem', background: '#f5f5f7', margin: '0.5rem 0', borderRadius: '6px', gap: '0.75rem',
+                  padding: '0.5rem 0.75rem', background: 'var(--color-surface-tint)', margin: '0.5rem 0', borderRadius: 'var(--radius-btn)', gap: '0.75rem',
                 }}
               >
                 <div>
                   <strong>{getNameById(a.evalueeId)}</strong>
                   {' ← '}
-                  <span style={{ color: '#6f6f77', fontSize: '0.9rem' }}>{getLabelByType(a.relationType)}</span>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>{getLabelByType(a.relationType)}</span>
                   {' ← '}
                   <strong>{getNameById(a.raterId)}</strong>
                 </div>
                 <button
                   onClick={() => handleRemoveAssignment(a.id)}
                   title="Удалить это назначение"
-                  style={{
-                    background: 'none', border: '1px solid #e5e5e7', borderRadius: '5px',
-                    cursor: 'pointer', padding: '0.2rem 0.5rem', fontSize: '0.85rem', color: '#ff3b30',
-                  }}
+                  className="btn btn-icon btn-danger-ghost"
                 >
-                  🗑
+                  <Trash2 size={16} strokeWidth={2} />
                 </button>
               </div>
             ))}
           </div>
         )}
 
-        <button onClick={handleComplete} className="btn btn-success" style={{ marginTop: '1rem' }}>
-          Готово →
+        <button onClick={handleComplete} className="btn btn-primary" style={{ marginTop: '1rem' }}>
+          Готово
+          <ArrowRight size={16} strokeWidth={2} />
         </button>
       </div>
     </div>

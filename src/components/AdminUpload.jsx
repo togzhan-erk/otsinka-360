@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
+import { ArrowLeft, ArrowRight, Paperclip } from 'lucide-react';
 
 const FIO_HEADERS = ['фио', 'фио сотрудника'];
 const EMAIL_HEADERS = ['email сотрудника', 'email', 'почта'];
@@ -13,8 +14,9 @@ function findColumn(headers, candidates) {
 function BackButton({ onBack }) {
   if (!onBack) return null;
   return (
-    <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#6f6f77', cursor: 'pointer', fontSize: '0.95rem', padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-      ← Назад
+    <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+      <ArrowLeft size={16} strokeWidth={2} />
+      Назад
     </button>
   );
 }
@@ -99,10 +101,13 @@ function AdminUpload({ onUpload, onBack }) {
 
         <label className="upload-label">
           <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="file-input" />
-          <span className="upload-button">📎 Выбрать файл</span>
+          <span className="upload-button">
+            <Paperclip size={16} strokeWidth={2} />
+            Выбрать файл
+          </span>
         </label>
 
-        <div style={{ fontSize: '0.85rem', color: '#6f6f77', marginTop: '0.75rem', lineHeight: 1.5 }}>
+        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '0.75rem', lineHeight: 1.5 }}>
           Нужные колонки: <strong>ФИО</strong>, <strong>Email сотрудника</strong> (уникальный),{' '}
           <strong>Email руководителя</strong> (для автоматического назначения оценивающих), опционально —{' '}
           <strong>Отдел/подразделение</strong>.
@@ -126,8 +131,9 @@ function AdminUpload({ onUpload, onBack }) {
                 <li key={emp.id}>{emp.name} - {emp.email}</li>
               ))}
             </ul>
-            <button onClick={() => onUpload(employees)} className="btn btn-success">
-              Далее →
+            <button onClick={() => onUpload(employees)} className="btn btn-primary">
+              Далее
+              <ArrowRight size={16} strokeWidth={2} />
             </button>
           </div>
         )}

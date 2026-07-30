@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 
 const DEFAULT_OPEN_QUESTIONS = {
   strength: 'Что делает хорошо?',
@@ -63,7 +64,8 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, cycleId, assignmen
       <div className="card">
         {onBack && (
           <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-            ← Назад
+            <ArrowLeft size={16} strokeWidth={2} />
+            Назад
           </button>
         )}
         <h2>Оценка компетенций</h2>
@@ -118,7 +120,7 @@ function RaterForm({ evaluee, competencies, onSubmit, onBack, cycleId, assignmen
 
           {error && <div className="error-message">{error}</div>}
 
-          <button type="submit" className="btn btn-success" disabled={submitting}>
+          <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
             {submitting ? 'Сохранение...' : 'Завершить'}
           </button>
         </form>
