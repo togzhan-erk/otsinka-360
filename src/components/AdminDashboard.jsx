@@ -5,8 +5,9 @@ import { getArchivedCycles, getCycleFeedback } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
 import { getClients, createClient } from '../clients';
-import AdminUpload from './AdminUpload';
+import EmployeesStep from './EmployeesStep';
 import RoleAssignment from './RoleAssignment';
+import LaunchStep from './LaunchStep';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
 import {
@@ -28,7 +29,6 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const [liveRoleAssignments, setLiveRoleAssignments] = useState(null);
   const [liveCycleName, setLiveCycleName] = useState(null);
   const [liveCycleCreatedAt, setLiveCycleCreatedAt] = useState(null);
-  const [setupUploadedEmployees, setSetupUploadedEmployees] = useState(null);
 
   useEffect(() => {
     if (!cycleId) {
@@ -338,24 +338,17 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           </div>
         )}
 
-        {/* ── Setup (upload employees + assign raters + tracks) ── */}
+        {/* ── Setup (employees / assignments / launch) ── */}
         {activeTab === 'setup' && (
           <div style={{ marginTop: '2rem' }}>
             <h3 style={{ margin: 0 }}>Настройка опроса</h3>
-            <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
-              Загрузите сотрудников и назначьте, кто кого оценивает
-            </p>
-            <SetupTab
+            <SetupSteps
               employees={employees}
-              roleAssignments={effectiveAssignments}
-              uploadedEmployees={setupUploadedEmployees}
-              onUpload={(emps) => setSetupUploadedEmployees(emps)}
-              onBackToUpload={() => setSetupUploadedEmployees(null)}
-              onAssignmentComplete={(assignments, employeesWithTracks) => {
-                setSetupUploadedEmployees(null);
-                onSetupComplete(assignments, employeesWithTracks);
-                setActiveTab('overview');
-              }}
+              assignments={effectiveAssignments}
+              onSaveEmployees={(newEmployees, newAssignments) => onSetupComplete(newAssignments, newEmployees)}
+              onSaveAssignments={(newAssignments) => onSetupComplete(newAssignments, employees)}
+              onDeleteAssignment={handleDeleteAssignmentClick}
+              onGoToInvitations={() => setActiveTab('invitations')}
             />
           </div>
         )}
@@ -808,45 +801,68 @@ function EmployeeResultRow({ group, onOpenReport, reportOpts }) {
   );
 }
 
-// ── Setup tab (upload employees → assign raters + tracks) ──────────────────
+// ── Setup steps (Сотрудники / Назначения / Запуск) ──────────────────────────
 //
-// Reuses AdminUpload/RoleAssignment exactly as they are — this only decides
-// which of the two to show and where the result goes. Once the active cycle
-// already has employees, re-running the wizard is not offered here (it would
-// silently wipe already-sent invites); admins use "+ Новый опрос" instead.
+// Not a linear wizard — a free-navigation, always-editable management panel
+// for the active cycle. Each step owns a fixed slice of the same two arrays
+// (employees, assignments) and saves through the same two callbacks; there
+// is no per-step local draft state, so switching steps never loses an edit.
 
-function SetupTab({ employees, roleAssignments, uploadedEmployees, onUpload, onBackToUpload, onAssignmentComplete }) {
-  if (uploadedEmployees) {
-    return (
-      <div style={{ marginTop: '1.5rem' }}>
-        <RoleAssignment
-          employees={uploadedEmployees}
-          onComplete={onAssignmentComplete}
-          onBack={onBackToUpload}
-        />
-      </div>
-    );
-  }
+const SETUP_STEPS = [
+  {
+    key: 'employees', number: 1, title: 'Сотрудники',
+    hint: 'Загрузите список из Excel или добавьте вручную. Здесь же можно править данные и выбрать трек.',
+  },
+  {
+    key: 'assignments', number: 2, title: 'Назначения',
+    hint: 'Задайте, кто кого оценивает. Можно сгенерировать автоматически из оргструктуры или добавить вручную.',
+  },
+  {
+    key: 'launch', number: 3, title: 'Запуск',
+    hint: 'Проверьте перед запуском и переходите к рассылке приглашений.',
+  },
+];
 
-  if (employees.length === 0) {
-    return (
-      <div style={{ marginTop: '1.5rem' }}>
-        <AdminUpload onUpload={onUpload} onBack={null} />
-      </div>
-    );
-  }
+function SetupSteps({ employees, assignments, onSaveEmployees, onSaveAssignments, onDeleteAssignment, onGoToInvitations }) {
+  const [step, setStep] = useState('employees');
+  const current = SETUP_STEPS.find(s => s.key === step);
 
   return (
-    <div style={{ marginTop: '2rem' }}>
-      <h3 style={{ marginTop: 0 }}>Опрос уже настроен</h3>
-      <p style={{ color: 'var(--color-text-muted)' }}>
-        Сотрудников: {employees.length}, назначений: {roleAssignments.length}.
-      </p>
-      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-        Чтобы изменить отдельные назначения — используйте вкладку «Приглашения».
-        Чтобы полностью загрузить новый список — начните новый опрос кнопкой «+ Новый опрос» вверху страницы
-        (текущий опрос и все его ответы сохранятся в архиве).
-      </p>
+    <div style={{ marginTop: '1.25rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+        {SETUP_STEPS.map(s => (
+          <button
+            key={s.key}
+            onClick={() => setStep(s.key)}
+            className="btn btn-sm"
+            style={{
+              background: step === s.key ? 'var(--color-primary)' : 'transparent',
+              color: step === s.key ? '#fff' : 'var(--color-text-muted)',
+              border: `1.5px solid ${step === s.key ? 'var(--color-primary)' : 'var(--color-border)'}`,
+            }}
+          >
+            {s.number}. {s.title}
+          </button>
+        ))}
+      </div>
+
+      <h4 style={{ marginBottom: '0.35rem' }}>{current.title}</h4>
+      <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>{current.hint}</p>
+
+      {step === 'employees' && (
+        <EmployeesStep employees={employees} assignments={assignments} onSave={onSaveEmployees} />
+      )}
+      {step === 'assignments' && (
+        <RoleAssignment
+          employees={employees}
+          assignments={assignments}
+          onSave={onSaveAssignments}
+          onDeleteAssignment={onDeleteAssignment}
+        />
+      )}
+      {step === 'launch' && (
+        <LaunchStep employees={employees} assignments={assignments} onGoToInvitations={onGoToInvitations} />
+      )}
     </div>
   );
 }

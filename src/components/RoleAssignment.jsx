@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, Wand2, Trash2 } from 'lucide-react';
-import { STANDARD_TRACK, TOP_TRACK, TRACK_LABELS, DEFAULT_TRACK } from '../competencies';
+import { Wand2, Trash2 } from 'lucide-react';
 
 const RELATIONSHIP_TYPES = [
   { value: 'self', label: 'Самооценка' },
@@ -10,16 +9,6 @@ const RELATIONSHIP_TYPES = [
 ];
 
 const LARGE_TEAM_THRESHOLD = 8;
-
-function BackButton({ onBack }) {
-  if (!onBack) return null;
-  return (
-    <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0, marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-      <ArrowLeft size={16} strokeWidth={2} />
-      Назад
-    </button>
-  );
-}
 
 // Builds assignments from org-chart data (email / managerEmail) alone:
 //   - everyone rates themselves (self)
@@ -65,60 +54,57 @@ function buildAutoAssignments(employees) {
   return generated;
 }
 
-function RoleAssignment({ employees, onComplete, onBack }) {
-  const [assignments, setAssignments] = useState([]);
+function assignmentKey(a) {
+  return `${a.evalueeId}|${a.raterId}|${a.relationType}`;
+}
+
+// Step 2 of Настройка опроса: a persistent assignments panel — no more
+// one-shot wizard. `assignments` is always the current, real, saved state
+// (no local draft copy); every action calls onSave with the full next
+// array immediately, so this never drifts from what's actually persisted.
+// Deleting a single assignment reuses AdminDashboard's existing confirm+
+// delete flow via onDeleteAssignment, keeping that behavior identical to
+// the Приглашения tab's delete action.
+function RoleAssignment({ employees, assignments, onSave, onDeleteAssignment }) {
   const [selectedEvaluee, setSelectedEvaluee] = useState('');
   const [selectedRater, setSelectedRater] = useState('');
   const [selectedType, setSelectedType] = useState('colleague');
   const [error, setError] = useState('');
   const [largeTeamWarning, setLargeTeamWarning] = useState(null);
-  const [tracks, setTracks] = useState(() =>
-    employees.reduce((acc, e) => ({ ...acc, [e.id]: e.track || DEFAULT_TRACK }), {})
-  );
 
   const hasManagerEmailData = employees.some(e => Object.prototype.hasOwnProperty.call(e, 'managerEmail'));
 
-  const handleTrackChange = (employeeId, track) => {
-    setTracks(prev => ({ ...prev, [employeeId]: track }));
-  };
+  const getNameById = (id) => employees.find(e => e.id === id)?.name || 'Unknown';
 
   const handleAdd = () => {
     if (!selectedEvaluee || !selectedRater) {
       setError('Выберите оцениваемого и оценивающего');
       return;
     }
+    const key = `${selectedEvaluee}|${selectedRater}|${selectedType}`;
+    if (assignments.some(a => assignmentKey(a) === key)) {
+      setError('Такое назначение уже существует');
+      return;
+    }
 
-    const newAssign = {
-      id: Date.now(),
-      evalueeId: selectedEvaluee,
-      raterId: selectedRater,
-      relationType: selectedType,
-    };
-
-    setAssignments([...assignments, newAssign]);
+    const newAssign = { id: `manual_${Date.now()}`, evalueeId: selectedEvaluee, raterId: selectedRater, relationType: selectedType };
+    onSave([...assignments, newAssign]);
     setSelectedRater('');
     setSelectedType('colleague');
     setError('');
   };
 
-  const handleRemoveAssignment = (id) => {
-    setAssignments(prev => prev.filter(a => a.id !== id));
-  };
-
   const handleAutoGenerate = () => {
     const generated = buildAutoAssignments(employees);
 
-    setAssignments(prev => {
-      const existingKeys = new Set(prev.map(a => `${a.evalueeId}|${a.raterId}|${a.relationType}`));
-      const merged = [...prev];
-      generated.forEach(g => {
-        const key = `${g.evalueeId}|${g.raterId}|${g.relationType}`;
-        if (!existingKeys.has(key)) {
-          existingKeys.add(key);
-          merged.push(g);
-        }
-      });
-      return merged;
+    const existingKeys = new Set(assignments.map(assignmentKey));
+    const merged = [...assignments];
+    generated.forEach(g => {
+      const key = assignmentKey(g);
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        merged.push(g);
+      }
     });
 
     const colleagueCounts = {};
@@ -132,92 +118,60 @@ function RoleAssignment({ employees, onComplete, onBack }) {
       .map(([evalueeId, count]) => ({ name: getNameById(evalueeId), count }));
     setLargeTeamWarning(overloaded.length > 0 ? overloaded : null);
     setError('');
+    onSave(merged);
   };
 
-  const handleComplete = () => {
-    if (assignments.length === 0) {
-      setError('Добавьте назначения');
+  const handleTypeChange = (assignment, newType) => {
+    if (newType === assignment.relationType) return;
+    const key = `${assignment.evalueeId}|${assignment.raterId}|${newType}`;
+    const collides = assignments.some(a => a.id !== assignment.id && assignmentKey(a) === key);
+    if (collides) {
+      alert('Назначение с таким типом для этой пары уже существует');
       return;
     }
-    const employeesWithTracks = employees.map(e => ({ ...e, track: tracks[e.id] || DEFAULT_TRACK }));
-    onComplete(assignments, employeesWithTracks);
+    onSave(assignments.map(a => a.id === assignment.id ? { ...a, relationType: newType } : a));
   };
 
-  const getNameById = (id) => employees.find(e => e.id === id)?.name || 'Unknown';
-  const getLabelByType = (type) => RELATIONSHIP_TYPES.find(r => r.value === type)?.label || type;
-
   return (
-    <div className="container">
-      <div className="card">
-        <BackButton onBack={onBack} />
-        <h2>Назначение оценок</h2>
-
-        {employees.length > 0 && (
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Треки сотрудников</h3>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: 0 }}>
-              Определяет, какой набор компетенций увидят все, кто оценивает этого сотрудника.
+    <div>
+      <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-btn)' }}>
+        <h4 style={{ marginTop: 0, fontSize: '1.05rem' }}>Автоматическое назначение</h4>
+        {hasManagerEmailData ? (
+          <>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+              Построит самооценку, руководителя, коллег (тех же подчинённых) и подчинённых для каждого
+              сотрудника по колонке «Email руководителя». Уже добавленные назначения не дублируются.
             </p>
-            {employees.map(emp => (
-              <div
-                key={emp.id}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.6rem 0.75rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-btn)',
-                  marginBottom: '0.5rem', gap: '0.75rem', flexWrap: 'wrap',
-                }}
-              >
-                <span>{emp.name}</span>
-                <select
-                  value={tracks[emp.id] || DEFAULT_TRACK}
-                  onChange={(e) => handleTrackChange(emp.id, e.target.value)}
-                  className="input"
-                  style={{ width: 'auto', minWidth: '220px' }}
-                >
-                  <option value={STANDARD_TRACK}>{TRACK_LABELS[STANDARD_TRACK]}</option>
-                  <option value={TOP_TRACK}>{TRACK_LABELS[TOP_TRACK]}</option>
-                </select>
-              </div>
+            <button onClick={handleAutoGenerate} className="btn btn-secondary btn-sm">
+              <Wand2 size={15} strokeWidth={2} />
+              Сгенерировать автоматически
+            </button>
+          </>
+        ) : (
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+            В загруженном файле нет колонки «Email руководителя», поэтому автоматическое назначение
+            недоступно. Назначьте оценивающих вручную ниже.
+          </p>
+        )}
+      </div>
+
+      {largeTeamWarning && (
+        <div style={{
+          marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px',
+          background: '#fff8e6', border: '1px solid #f0d585', color: '#7a5c00',
+        }}>
+          <strong>Внимание:</strong> у некоторых сотрудников получилось много «коллег»-оценивающих.
+          Возможно, стоит убрать часть вручную в списке ниже:
+          <ul style={{ marginTop: '0.5rem', marginBottom: 0, paddingLeft: '1.25rem' }}>
+            {largeTeamWarning.map(w => (
+              <li key={w.name}>{w.name} — {w.count} коллег</li>
             ))}
-          </div>
-        )}
-
-        <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-btn)' }}>
-          <h3 style={{ marginTop: 0, fontSize: '1.05rem' }}>Автоматическое назначение</h3>
-          {hasManagerEmailData ? (
-            <>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-                Построит самооценку, руководителя, коллег (тех же подчинённых) и подчинённых для каждого
-                сотрудника по колонке «Email руководителя». Уже добавленные назначения не дублируются.
-              </p>
-              <button onClick={handleAutoGenerate} className="btn btn-secondary">
-                <Wand2 size={16} strokeWidth={2} />
-                Сгенерировать назначения автоматически
-              </button>
-            </>
-          ) : (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-              В загруженном файле нет колонки «Email руководителя», поэтому автоматическое назначение
-              недоступно. Назначьте оценивающих вручную ниже.
-            </p>
-          )}
+          </ul>
         </div>
+      )}
 
-        {largeTeamWarning && (
-          <div style={{
-            marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px',
-            background: '#fff8e6', border: '1px solid #f0d585', color: '#7a5c00',
-          }}>
-            <strong>Внимание:</strong> у некоторых сотрудников получилось много «коллег»-оценивающих.
-            Возможно, стоит убрать часть вручную в списке ниже:
-            <ul style={{ marginTop: '0.5rem', marginBottom: 0, paddingLeft: '1.25rem' }}>
-              {largeTeamWarning.map(w => (
-                <li key={w.name}>{w.name} — {w.count} коллег</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
+      <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-btn)' }}>
+        <h4 style={{ marginTop: 0, fontSize: '1.05rem' }}>Добавить вручную</h4>
         <div className="form-group">
           <label>Оцениваемый:</label>
           <select
@@ -262,7 +216,7 @@ function RoleAssignment({ employees, onComplete, onBack }) {
             </div>
 
             {selectedRater && (
-              <button onClick={handleAdd} className="btn btn-secondary">
+              <button onClick={handleAdd} className="btn btn-secondary btn-sm">
                 + Добавить
               </button>
             )}
@@ -270,41 +224,50 @@ function RoleAssignment({ employees, onComplete, onBack }) {
         )}
 
         {error && <div className="error-message">{error}</div>}
+      </div>
 
-        {assignments.length > 0 && (
-          <div style={{ marginTop: '2rem' }}>
-            <h3>Добавленные ({assignments.length})</h3>
-            {assignments.map(a => (
-              <div
-                key={a.id}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.5rem 0.75rem', background: 'var(--color-surface-tint)', margin: '0.5rem 0', borderRadius: 'var(--radius-btn)', gap: '0.75rem',
-                }}
-              >
-                <div>
-                  <strong>{getNameById(a.evalueeId)}</strong>
-                  {' ← '}
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>{getLabelByType(a.relationType)}</span>
-                  {' ← '}
-                  <strong>{getNameById(a.raterId)}</strong>
-                </div>
+      <div>
+        <h4 style={{ fontSize: '1.05rem' }}>Все назначения ({assignments.length})</h4>
+        {assignments.length === 0 ? (
+          <p style={{ color: 'var(--color-text-muted)' }}>Назначений пока нет.</p>
+        ) : (
+          assignments.map(a => (
+            <div
+              key={a.id}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0.6rem 0.75rem', background: '#fff', border: '1px solid var(--color-border)',
+                margin: '0.5rem 0', borderRadius: 'var(--radius-btn)', gap: '0.75rem', flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <strong>{getNameById(a.evalueeId)}</strong>
+                {' ← '}
+                <strong>{getNameById(a.raterId)}</strong>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <select
+                  value={a.relationType}
+                  onChange={(e) => handleTypeChange(a, e.target.value)}
+                  className="input"
+                  style={{ width: 'auto', padding: '0.4rem 0.6rem', fontSize: '0.85rem' }}
+                  title="Изменить тип отношений"
+                >
+                  {RELATIONSHIP_TYPES.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
                 <button
-                  onClick={() => handleRemoveAssignment(a.id)}
+                  onClick={() => onDeleteAssignment(a)}
                   title="Удалить это назначение"
                   className="btn btn-icon btn-danger-ghost"
                 >
                   <Trash2 size={16} strokeWidth={2} />
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))
         )}
-
-        <button onClick={handleComplete} className="btn btn-primary" style={{ marginTop: '1rem' }}>
-          Готово
-          <ArrowRight size={16} strokeWidth={2} />
-        </button>
       </div>
     </div>
   );
