@@ -11,8 +11,8 @@ function makeEmployeeId() {
 const EMPTY_FORM = { name: '', email: '', managerEmail: '', department: '', track: DEFAULT_TRACK };
 
 const thStyle = {
-  padding: '0.6rem 0.75rem', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.03em',
-  color: 'var(--color-text-muted)', textTransform: 'uppercase', textAlign: 'left',
+  padding: '0.6rem 0.75rem', fontSize: '0.8125rem', fontWeight: 600,
+  color: 'var(--color-text-muted)', textAlign: 'left',
 };
 const tdStyle = { padding: '0.6rem 0.75rem', verticalAlign: 'middle', fontSize: '0.88rem' };
 const inputSm = { padding: '0.4rem 0.6rem', fontSize: '0.85rem', width: '100%' };

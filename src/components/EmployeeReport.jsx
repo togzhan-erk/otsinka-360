@@ -495,8 +495,8 @@ function StatTile({ label, value, sub, small }) {
       borderTop: `4px solid ${BRAND.primary}`,
     }}>
       <div style={{
-        fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em',
-        color: BRAND.muted, textTransform: 'uppercase', marginBottom: '0.5rem',
+        fontSize: '0.8125rem', fontWeight: 600,
+        color: BRAND.muted, marginBottom: '0.5rem',
       }}>
         {label}
       </div>
@@ -571,9 +571,8 @@ function CommentCard({ label, text, index }) {
       border: '1px solid var(--color-border)',
     }}>
       <div style={{
-        fontSize: '0.72rem', fontWeight: 700,
+        fontSize: '0.8125rem', fontWeight: 600,
         color: BRAND.accent, marginBottom: '0.3rem',
-        textTransform: 'uppercase', letterSpacing: '0.05em',
       }}>
         {label}
       </div>

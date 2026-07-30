@@ -16,6 +16,7 @@ import {
   LayoutDashboard, Settings, Mail, BarChart3, Archive, Building2,
   Plus, LogOut, Bell, Copy, Check, CheckCircle2, Trash2, Download,
   FileText, ArrowLeft, Clock, Circle, Play, Search, Lock, Unlock, KeyRound,
+  Users, ClipboardList,
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
@@ -237,8 +238,8 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h2 style={{ margin: 0 }}>Панель администратора</h2>
-            {currentUser?.email && (
-              <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{currentUser.email}</p>
+            {companyName && (
+              <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{companyName}</p>
             )}
             {cycleName && (
               <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)' }}>{cycleName}</p>
@@ -293,7 +294,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           <div style={{ marginTop: '2rem' }}>
             <div style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-              flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem',
+              flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem',
             }}>
               <div>
                 <h3 style={{ margin: 0 }}>{companyName || 'Ваша компания'}</h3>
@@ -655,16 +656,18 @@ function ProgressWidget({ completed, total, pct }) {
 // nothing is invented. The checklist just narrates that same state as a
 // sequence of steps.
 
-function HomeMetricCard({ label, value, sub, children }) {
+function HomeMetricCard({ icon: Icon, label, value, sub, children }) {
   return (
     <div style={{
       background: '#fff', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
       padding: '1.5rem', textAlign: 'center',
     }}>
       <div style={{
-        fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.06em',
-        color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+        fontSize: '0.8125rem', fontWeight: 600,
+        color: 'var(--color-text-muted)', marginBottom: '0.5rem',
       }}>
+        {Icon && <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />}
         {label}
       </div>
       <div style={{
@@ -734,10 +737,10 @@ function HomeSummary({ employeesCount, totalAssignments, completedCount, complet
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <HomeMetricCard label="Сотрудников" value={employeesCount} />
-        <HomeMetricCard label="Назначений" value={totalAssignments} />
-        <HomeMetricCard label="Прошли оценку" value={`${completionPct}%`}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
+        <HomeMetricCard icon={Users} label="Сотрудников" value={employeesCount} />
+        <HomeMetricCard icon={ClipboardList} label="Назначений" value={totalAssignments} />
+        <HomeMetricCard icon={CheckCircle2} label="Прошли оценку" value={`${completionPct}%`}>
           <div style={{ background: 'var(--color-border)', borderRadius: 999, height: 6, overflow: 'hidden', marginTop: '0.65rem' }}>
             <div style={{
               width: `${completionPct}%`, height: '100%', borderRadius: 999,

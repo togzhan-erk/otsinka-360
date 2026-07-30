@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, AlertTriangle } from 'lucide-react';
+import { ArrowRight, AlertTriangle, Users, ClipboardList } from 'lucide-react';
 
 function pluralizeEmployees(n) {
   const mod10 = n % 10;
@@ -9,16 +9,18 @@ function pluralizeEmployees(n) {
   return 'сотрудников';
 }
 
-function SummaryTile({ label, value }) {
+function SummaryTile({ icon: Icon, label, value }) {
   return (
     <div style={{
       background: '#fff', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
       padding: '1.5rem', textAlign: 'center',
     }}>
       <div style={{
-        fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.06em',
-        color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+        fontSize: '0.8125rem', fontWeight: 600,
+        color: 'var(--color-text-muted)', marginBottom: '0.5rem',
       }}>
+        {Icon && <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />}
         {label}
       </div>
       <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '2.2rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
@@ -49,8 +51,8 @@ function LaunchStep({ employees, assignments, onGoToInvitations }) {
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <SummaryTile label="Сотрудников" value={employees.length} />
-        <SummaryTile label="Назначений" value={assignments.length} />
+        <SummaryTile icon={Users} label="Сотрудников" value={employees.length} />
+        <SummaryTile icon={ClipboardList} label="Назначений" value={assignments.length} />
       </div>
 
       {warnings.length > 0 && (
