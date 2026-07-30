@@ -310,14 +310,19 @@ function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1 className="app-logo-heading">
-          <Logo className="app-logo" />
-        </h1>
-        <p>Индивидуальный план развития на основе AI анализа</p>
-      </header>
+      {/* AdminDashboard renders its own full-width navbar (logo + tabs +
+          actions) in place of this generic hero header — public/rater
+          screens keep the plain logo header, per spec. */}
+      {stage !== 'adminDashboard' && (
+        <header className="app-header">
+          <h1 className="app-logo-heading">
+            <Logo className="app-logo" />
+          </h1>
+          <p>Индивидуальный план развития на основе AI анализа</p>
+        </header>
+      )}
 
-      <main className="app-main">
+      <main className={`app-main${stage === 'adminDashboard' ? ' app-main--admin' : ''}`}>
         {stage === 'roleSelector' && (
           <RoleSelector
             onSelectAdmin={handleSelectAdminRole}

@@ -6,6 +6,7 @@ import {
 } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
+import { LogoIcon } from './Logo';
 import { listClients, createClient, setClientAccess, resetClientPassword, deleteClientAccount } from '../clients';
 import EmployeesStep from './EmployeesStep';
 import RoleAssignment from './RoleAssignment';
@@ -20,6 +21,63 @@ import {
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
+
+// ── Admin navbar ────────────────────────────────────────────────────────────
+//
+// Full-width dark-green top bar — logo, tabs, and account actions in one
+// row. Purely presentational: all it needs is the tab state and a handful
+// of already-computed values from AdminDashboard, passed in as props.
+
+const NAV_TABS = [
+  { key: 'overview', label: 'Главная', Icon: LayoutDashboard },
+  { key: 'setup', label: 'Настройка опроса', Icon: Settings },
+  { key: 'invitations', label: 'Приглашения', Icon: Mail },
+  { key: 'results', label: 'Результаты', Icon: BarChart3 },
+  { key: 'archive', label: 'Архив', Icon: Archive },
+];
+
+function AdminNavbar({ activeTab, onTabChange, isSuperadminUser, sentCount, totalAssignments, currentUser, onStartNewSurvey, onLogout }) {
+  const tabs = isSuperadminUser
+    ? [...NAV_TABS, { key: 'clients', label: 'Клиенты', Icon: Building2 }]
+    : NAV_TABS;
+
+  return (
+    <div className="admin-navbar">
+      <div className="admin-navbar-inner">
+        <div className="admin-navbar-logo">
+          <LogoIcon style={{ width: 30, height: 30, flexShrink: 0 }} />
+          <span className="admin-navbar-logo-text">Growth 360</span>
+        </div>
+
+        <div className="admin-navbar-tabs">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              className={`admin-navbar-tab ${activeTab === t.key ? 'active' : ''}`}
+              onClick={() => onTabChange(t.key)}
+            >
+              <t.Icon size={16} strokeWidth={1.9} />
+              {t.label}
+              {t.key === 'invitations' && sentCount > 0 && ` (${sentCount}/${totalAssignments})`}
+            </button>
+          ))}
+        </div>
+
+        <div className="admin-navbar-actions">
+          {currentUser?.email && <span className="admin-navbar-email">{currentUser.email}</span>}
+          <button onClick={onStartNewSurvey} className="btn btn-secondary btn-sm">
+            <Plus size={15} strokeWidth={2} />
+            Новый опрос
+          </button>
+          <button onClick={onLogout} className="btn btn-ghost btn-sm">
+            <LogOut size={15} strokeWidth={2} />
+            Выйти
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, currentUser, onStartOver, onLogout, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport, onCycleActivated }) {
   const [activeTab, setActiveTab] = useState('overview');
@@ -216,7 +274,23 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const cycleYear = liveCycleCreatedAt?.toDate ? liveCycleCreatedAt.toDate().getFullYear() : new Date().getFullYear();
   const hasEmployees = employees.length > 0;
   const isSuperadminUser = isSuperadmin(currentUser);
-  const companyName = currentUser?.displayName || currentUser?.email || '';
+  // Only a real company name counts here — the email fallback that used to
+  // live on this variable is never shown as a title anywhere anymore (it's
+  // still available separately, in the navbar, next to "Выйти").
+  const companyName = currentUser?.displayName || '';
+
+  // One title for the Home tab, no email fallback: a client with a company
+  // name on file sees it as the title with the active survey named
+  // underneath; someone without one (the superadmin) sees the active
+  // survey's own name as the title instead.
+  const homeTitle = companyName
+    ? companyName
+    : (cycleId ? (cycleName || 'Без названия') : 'Панель администратора');
+  const homeSubtitle = !cycleId
+    ? 'Активного опроса пока нет'
+    : companyName
+      ? `Активный опрос: ${cycleName || 'Без названия'} · ${cycleYear}`
+      : `Активный опрос · ${cycleYear}`;
 
   // Home status badge — three real states, no invented ones: an active
   // cycle either hasn't been set up with employees yet ("Черновик"), has
@@ -233,75 +307,29 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const goToSetup = () => setActiveTab('setup');
 
   return (
-    <div className="container">
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Панель администратора</h2>
-            {companyName && (
-              <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{companyName}</p>
-            )}
-            {cycleName && (
-              <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-muted)' }}>{cycleName}</p>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setShowNewSurveyModal(true)}
-              className="btn btn-secondary btn-sm"
-            >
-              <Plus size={15} strokeWidth={2} />
-              Новый опрос
-            </button>
-            <button onClick={onLogout} className="btn btn-ghost btn-sm">
-              <LogOut size={15} strokeWidth={2} />
-              Выйти
-            </button>
-          </div>
-        </div>
-
-        <div className="admin-tabs" style={{ marginTop: '1.5rem' }}>
-          <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-            <LayoutDashboard size={18} strokeWidth={1.75} />
-            Главная
-          </button>
-          <button className={`tab-btn ${activeTab === 'setup' ? 'active' : ''}`} onClick={() => setActiveTab('setup')}>
-            <Settings size={18} strokeWidth={1.75} />
-            Настройка опроса
-          </button>
-          <button className={`tab-btn ${activeTab === 'invitations' ? 'active' : ''}`} onClick={() => setActiveTab('invitations')}>
-            <Mail size={18} strokeWidth={1.75} />
-            Приглашения {sentCount > 0 && `(${sentCount}/${totalAssignments})`}
-          </button>
-          <button className={`tab-btn ${activeTab === 'results' ? 'active' : ''}`} onClick={() => setActiveTab('results')}>
-            <BarChart3 size={18} strokeWidth={1.75} />
-            Результаты
-          </button>
-          <button className={`tab-btn ${activeTab === 'archive' ? 'active' : ''}`} onClick={() => setActiveTab('archive')}>
-            <Archive size={18} strokeWidth={1.75} />
-            Архив
-          </button>
-          {isSuperadminUser && (
-            <button className={`tab-btn ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
-              <Building2 size={18} strokeWidth={1.75} />
-              Клиенты
-            </button>
-          )}
-        </div>
-
+    <>
+      <AdminNavbar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        isSuperadminUser={isSuperadminUser}
+        sentCount={sentCount}
+        totalAssignments={totalAssignments}
+        currentUser={currentUser}
+        onStartNewSurvey={() => setShowNewSurveyModal(true)}
+        onLogout={onLogout}
+      />
+      <div className="admin-content">
         {/* ── Home ── */}
         {activeTab === 'overview' && (
-          <div style={{ marginTop: '2rem' }}>
+          <div>
             <div style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
               flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem',
             }}>
               <div>
-                <h3 style={{ margin: 0 }}>{companyName || 'Ваша компания'}</h3>
+                <h3 style={{ margin: 0 }}>{homeTitle}</h3>
                 <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
-                  {cycleId
-                    ? `Активный опрос: ${cycleName || 'Без названия'} · ${cycleYear}`
-                    : 'Активного опроса пока нет'}
+                  {homeSubtitle}
                 </p>
               </div>
               <span style={{
@@ -343,7 +371,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
 
         {/* ── Setup (employees / assignments / launch) ── */}
         {activeTab === 'setup' && (
-          <div style={{ marginTop: '2rem' }}>
+          <div>
             <h3 style={{ margin: 0 }}>Настройка опроса</h3>
             <SetupSteps
               employees={employees}
@@ -358,7 +386,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
 
         {/* ── Invitations ── */}
         {activeTab === 'invitations' && (
-          <div style={{ marginTop: '2rem' }}>
+          <div>
             {!hasEmployees ? (
               <EmptyCycleNotice onGoToSetup={goToSetup} />
             ) : (
@@ -496,7 +524,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
 
         {/* ── Results (current active cycle) ── */}
         {activeTab === 'results' && (
-          <div style={{ marginTop: '2rem' }}>
+          <div>
             {!hasEmployees ? (
               <EmptyCycleNotice onGoToSetup={goToSetup} />
             ) : (
@@ -589,7 +617,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -1047,7 +1075,7 @@ function ArchiveTab({ onOpenReport, ownerUid, currentCycleId, currentCycleName, 
   if (openCycle) {
     const grouped = groupFeedbackByEvaluee(openCycle.feedbacks);
     return (
-      <div style={{ marginTop: '2rem' }}>
+      <div>
         <button
           onClick={() => setOpenCycle(null)}
           className="btn btn-ghost btn-sm"
@@ -1083,7 +1111,7 @@ function ArchiveTab({ onOpenReport, ownerUid, currentCycleId, currentCycleName, 
   }
 
   return (
-    <div style={{ marginTop: '2rem' }}>
+    <div>
       <h3 style={{ marginTop: 0, marginBottom: 0 }}>Архив опросов</h3>
       <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
         Прошлые опросы — можно открыть, возобновить, дублировать или удалить
@@ -1365,7 +1393,7 @@ function ClientsTab({ currentUser }) {
   };
 
   return (
-    <div style={{ marginTop: '2rem' }}>
+    <div>
       <h3 style={{ marginTop: 0, marginBottom: 0 }}>Клиенты</h3>
       <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
         Управление доступами клиентов

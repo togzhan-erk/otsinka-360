@@ -52,6 +52,17 @@
   width: 100%;
 }
 
+/* AdminDashboard supplies its own full-width navbar + centered content
+   wrapper (.admin-content below), so it opts out of app-main's own
+   padding/max-width — otherwise the navbar would inherit side gutters and
+   never reach the edges of the window. */
+.app-main--admin {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+  width: 100%;
+}
+
 .container {
   display: flex;
   justify-content: center;
@@ -434,43 +445,129 @@
   border: 1px solid var(--color-border);
 }
 
-/* ─── Admin Tabs ─────────────────────────────────────────────────────────── */
-.admin-tabs {
+/* ─── Admin Navbar ───────────────────────────────────────────────────────── */
+/* Full-bleed dark-green top bar for AdminDashboard, replacing both the old
+   generic .app-header (suppressed for this stage, see App.js) and the old
+   in-card "Панель администратора" header + .admin-tabs strip. Sits directly
+   inside .app (via .app-main--admin stripping app-main's own padding), so
+   it needs no width/breakout tricks to reach the edges of the window. */
+.admin-navbar {
+  background: var(--color-primary);
+  width: 100%;
+  box-shadow: 0 2px 12px rgba(47, 74, 62, 0.15);
+}
+
+.admin-navbar-inner {
   display: flex;
-  gap: 1.5rem;
-  margin: 2rem 0 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.tab-btn {
-  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.7rem 0.1rem 0.85rem;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-weight: 500;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  color: var(--color-text-muted);
-  transition: color 0.15s ease;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  font-size: 0.9rem;
+  gap: 1.5rem;
+  min-height: 60px;
+  padding: 0.5rem 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  flex-wrap: wrap;
 }
 
-.tab-btn svg {
+.admin-navbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   flex-shrink: 0;
 }
 
-.tab-btn.active {
-  color: var(--color-primary);
+.admin-navbar-logo-text {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.15rem;
   font-weight: 600;
-  border-bottom-color: var(--color-primary);
+  color: var(--color-bg);
+  white-space: nowrap;
 }
 
-.tab-btn:hover:not(.active) {
-  color: var(--color-text);
+.admin-navbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.admin-navbar-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #C7D2CB;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-navbar-tab svg {
+  flex-shrink: 0;
+}
+
+.admin-navbar-tab:hover:not(.active) {
+  color: var(--color-bg);
+}
+
+.admin-navbar-tab.active {
+  background: var(--color-leaf);
+  color: var(--color-bg);
+  font-weight: 600;
+}
+
+.admin-navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.admin-navbar-email {
+  color: #C7D2CB;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Buttons keep the shared .btn shape but need light-on-dark colors here. */
+.admin-navbar .btn-secondary {
+  border-color: rgba(250, 247, 241, 0.5);
+  color: var(--color-bg);
+}
+
+.admin-navbar .btn-secondary:hover:not(:disabled) {
+  background: rgba(250, 247, 241, 0.12);
+  border-color: var(--color-bg);
+}
+
+.admin-navbar .btn-ghost {
+  border-color: rgba(250, 247, 241, 0.3);
+  color: #C7D2CB;
+}
+
+.admin-navbar .btn-ghost:hover:not(:disabled) {
+  background: rgba(250, 247, 241, 0.1);
+  color: var(--color-bg);
+  border-color: rgba(250, 247, 241, 0.5);
+}
+
+/* Centered content wrapper below the navbar — carries the padding/max-width
+   app-main used to provide before AdminDashboard opted out of it. */
+.admin-content {
+  padding: 2.5rem 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 /* ─── Stats ──────────────────────────────────────────────────────────────── */
@@ -569,17 +666,25 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .admin-tabs {
-    flex-wrap: wrap;
+  .card h2 {
+    font-size: 1.5rem;
+  }
+
+  .admin-navbar-inner {
+    padding: 0.6rem 1rem;
     gap: 1rem;
   }
 
-  .tab-btn {
-    font-size: 0.82rem;
-    padding: 0.6rem 0.05rem 0.7rem;
+  .admin-navbar-tab {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
   }
 
-  .card h2 {
-    font-size: 1.5rem;
+  .admin-navbar-email {
+    display: none;
+  }
+
+  .admin-content {
+    padding: 1.75rem 1rem;
   }
 }
