@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getArchivedCycles, getCycleFeedback } from '../cycles';
+import {
+  getArchivedCycles, getCycleFeedback, resumeCycle, duplicateCycle, deleteCycleCompletely,
+} from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
 import { getClients, createClient } from '../clients';
@@ -13,12 +15,12 @@ import * as XLSX from 'xlsx';
 import {
   LayoutDashboard, Settings, Mail, BarChart3, Archive, Building2,
   Plus, LogOut, Bell, Copy, Check, CheckCircle2, Trash2, Download,
-  FileText, ArrowLeft, Clock, Circle,
+  FileText, ArrowLeft, Clock, Circle, Play,
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, currentUser, onStartOver, onLogout, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport }) {
+function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, currentUser, onStartOver, onLogout, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport, onCycleActivated }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
@@ -549,7 +551,14 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
 
         {/* ── Archive ── */}
         {activeTab === 'archive' && (
-          <ArchiveTab onOpenReport={onOpenReport} ownerUid={currentUser?.uid} />
+          <ArchiveTab
+            onOpenReport={onOpenReport}
+            ownerUid={currentUser?.uid}
+            currentCycleId={cycleId}
+            currentCycleName={cycleName}
+            onCycleActivated={onCycleActivated}
+            onGoToOverview={() => setActiveTab('overview')}
+          />
         )}
 
         {/* ── Clients (superadmin only) ── */}
@@ -566,7 +575,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
       </div>
 
       {showNewSurveyModal && (
-        <NewSurveyModal
+        <NamePromptModal
+          title="Начать новый опрос?"
+          description="Текущий опрос будет перемещён в архив, результаты сохранятся."
+          defaultName={defaultSurveyName()}
+          confirmLabel="Начать новый опрос"
           onCancel={() => setShowNewSurveyModal(false)}
           onConfirm={(name) => {
             setShowNewSurveyModal(false);
@@ -867,15 +880,20 @@ function SetupSteps({ employees, assignments, onSaveEmployees, onSaveAssignments
   );
 }
 
-// ── New survey modal ─────────────────────────────────────────────────────────
+// ── Name-prompt modal ────────────────────────────────────────────────────────
+//
+// Generic "type a name, confirm or cancel" dialog, shared by "+ Новый
+// опрос" and Archive's "Дублировать" — same shape (title, optional warning
+// description, an editable default name, a confirm button whose label
+// varies by action).
 
 function defaultSurveyName() {
   const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
   return `Опрос от ${today}`;
 }
 
-function NewSurveyModal({ onCancel, onConfirm }) {
-  const [name, setName] = useState(defaultSurveyName());
+function NamePromptModal({ title, description, defaultName, confirmLabel, onCancel, onConfirm }) {
+  const [name, setName] = useState(defaultName);
 
   return (
     <div
@@ -890,12 +908,12 @@ function NewSurveyModal({ onCancel, onConfirm }) {
         style={{ maxWidth: '440px', width: '100%' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ marginTop: 0 }}>Начать новый опрос?</h3>
-        <p style={{ color: 'var(--color-text-muted)' }}>
-          Текущий опрос будет перемещён в архив, результаты сохранятся.
-        </p>
+        <h3 style={{ marginTop: 0 }}>{title}</h3>
+        {description && (
+          <p style={{ color: 'var(--color-text-muted)' }}>{description}</p>
+        )}
         <div className="form-group">
-          <label><strong>Название нового опроса:</strong></label>
+          <label><strong>Название:</strong></label>
           <input
             type="text"
             value={name}
@@ -907,9 +925,9 @@ function NewSurveyModal({ onCancel, onConfirm }) {
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
           <button
             className="btn btn-primary"
-            onClick={() => onConfirm(name.trim() || defaultSurveyName())}
+            onClick={() => onConfirm(name.trim() || defaultName)}
           >
-            Начать новый опрос
+            {confirmLabel}
           </button>
           <button className="btn btn-secondary" onClick={onCancel}>
             Отмена
@@ -922,22 +940,37 @@ function NewSurveyModal({ onCancel, onConfirm }) {
 
 // ── Archive tab ──────────────────────────────────────────────────────────────
 
-function ArchiveTab({ onOpenReport, ownerUid }) {
+function archiveSummary(cycle) {
+  const employeesCount = (cycle.employees || []).length;
+  const assignments = cycle.roleAssignments || [];
+  const total = assignments.length;
+  const completed = assignments.filter(a => a.completed).length;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return { employeesCount, total, pct };
+}
+
+function ArchiveTab({ onOpenReport, ownerUid, currentCycleId, currentCycleName, onCycleActivated, onGoToOverview }) {
   const [cycles, setCycles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openCycle, setOpenCycle] = useState(null); // { id, name, employees, feedbacks, loading }
+  const [duplicatingCycle, setDuplicatingCycle] = useState(null); // the cycle object, or null
+  const [busyCycleId, setBusyCycleId] = useState(null); // id of a cycle mid resume/duplicate/delete
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadCycles = () => {
     setLoading(true);
     getArchivedCycles(ownerUid)
-      .then(list => { if (!cancelled) { setCycles(list); setLoading(false); } })
+      .then(list => { setCycles(list); setLoading(false); setError(null); })
       .catch(err => {
         console.error('[ArchiveTab] Failed to load archived cycles:', err);
-        if (!cancelled) { setError(err.message); setLoading(false); }
+        setError(err.message);
+        setLoading(false);
       });
-    return () => { cancelled = true; };
+  };
+
+  useEffect(() => {
+    loadCycles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerUid]);
 
   const handleOpenCycle = async (cycle) => {
@@ -949,6 +982,62 @@ function ArchiveTab({ onOpenReport, ownerUid }) {
       console.error('[ArchiveTab] Failed to load cycle results:', err);
       alert('Ошибка загрузки результатов архива: ' + err.message);
       setOpenCycle(null);
+    }
+  };
+
+  const handleResume = async (cycle) => {
+    const message = currentCycleId
+      ? `Возобновить опрос «${cycle.name}»? Текущий активный опрос «${currentCycleName || 'Без названия'}» будет перемещён в архив.`
+      : `Сделать опрос «${cycle.name}» активным?`;
+    if (!window.confirm(message)) return;
+
+    setBusyCycleId(cycle.id);
+    try {
+      await resumeCycle(cycle.id, currentCycleId, ownerUid);
+      onCycleActivated({ id: cycle.id, employees: cycle.employees || [], roleAssignments: cycle.roleAssignments || [] });
+      onGoToOverview();
+    } catch (err) {
+      console.error('[ArchiveTab] Failed to resume cycle:', err);
+      alert('Ошибка при возобновлении опроса: ' + err.message);
+    } finally {
+      setBusyCycleId(null);
+      loadCycles();
+    }
+  };
+
+  const handleDuplicateConfirm = async (name) => {
+    const cycle = duplicatingCycle;
+    setDuplicatingCycle(null);
+    setBusyCycleId(cycle.id);
+    try {
+      const newId = await duplicateCycle(cycle, name, currentCycleId, ownerUid);
+      const strippedAssignments = (cycle.roleAssignments || []).map(({ completed, completedAt, ...rest }) => rest);
+      onCycleActivated({ id: newId, employees: (cycle.employees || []).map(e => ({ ...e })), roleAssignments: strippedAssignments });
+      onGoToOverview();
+    } catch (err) {
+      console.error('[ArchiveTab] Failed to duplicate cycle:', err);
+      alert('Ошибка при дублировании опроса: ' + err.message);
+    } finally {
+      setBusyCycleId(null);
+      loadCycles();
+    }
+  };
+
+  const handleDelete = async (cycle) => {
+    const confirmed = window.confirm(
+      `Удалить опрос «${cycle.name}» безвозвратно? Все его результаты и планы развития будут потеряны. Это действие нельзя отменить.`
+    );
+    if (!confirmed) return;
+
+    setBusyCycleId(cycle.id);
+    try {
+      await deleteCycleCompletely(cycle.id, ownerUid);
+      setCycles(prev => prev.filter(c => c.id !== cycle.id));
+    } catch (err) {
+      console.error('[ArchiveTab] Failed to delete cycle:', err);
+      alert('Ошибка при удалении опроса: ' + err.message);
+    } finally {
+      setBusyCycleId(null);
     }
   };
 
@@ -994,7 +1083,7 @@ function ArchiveTab({ onOpenReport, ownerUid }) {
     <div style={{ marginTop: '2rem' }}>
       <h3 style={{ marginTop: 0, marginBottom: 0 }}>Архив опросов</h3>
       <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
-        Прошлые опросы — можно открыть или возобновить
+        Прошлые опросы — можно открыть, возобновить, дублировать или удалить
       </p>
 
       {loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
@@ -1005,30 +1094,81 @@ function ArchiveTab({ onOpenReport, ownerUid }) {
         <p style={{ color: 'var(--color-text-muted)' }}>Архив пуст. Здесь появятся опросы после того, как вы начнёте новый.</p>
       )}
 
-      {!loading && cycles.map(cycle => (
-        <div
-          key={cycle.id}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '1rem 1.25rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
-            marginBottom: '0.75rem', background: '#fff', gap: '1rem', flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: '600' }}>{cycle.name}</div>
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-              {cycle.createdAt?.toDate ? cycle.createdAt.toDate().toLocaleDateString('ru-RU') : ''}
+      {!loading && cycles.map(cycle => {
+        const { employeesCount, total, pct } = archiveSummary(cycle);
+        const isBusy = busyCycleId === cycle.id;
+        return (
+          <div
+            key={cycle.id}
+            style={{
+              padding: '1rem 1.25rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+              marginBottom: '0.75rem', background: '#fff',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontWeight: '600' }}>{cycle.name}</div>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '0.15rem' }}>
+                  {cycle.createdAt?.toDate ? cycle.createdAt.toDate().toLocaleDateString('ru-RU') : ''}
+                </div>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
+                  {employeesCount} сотрудников · {total} назначений · {pct}% прошли оценку
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => handleOpenCycle(cycle)}
+                  disabled={isBusy}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  Открыть результаты
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => handleResume(cycle)}
+                  disabled={isBusy}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  <Play size={15} strokeWidth={2} />
+                  Возобновить
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setDuplicatingCycle(cycle)}
+                  disabled={isBusy}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  Дублировать
+                </button>
+                <button
+                  className="btn btn-icon btn-danger-ghost"
+                  onClick={() => handleDelete(cycle)}
+                  disabled={isBusy}
+                  title="Удалить опрос безвозвратно"
+                >
+                  <Trash2 size={16} strokeWidth={2} />
+                </button>
+              </div>
             </div>
           </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => handleOpenCycle(cycle)}
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            Открыть результаты
-          </button>
-        </div>
-      ))}
+        );
+      })}
+
+      {duplicatingCycle && (
+        <NamePromptModal
+          title="Дублировать опрос?"
+          description={
+            currentCycleId
+              ? `Создастся новый опрос со списком сотрудников и назначениями из «${duplicatingCycle.name}», без старых ответов и ИПР. Текущий активный опрос «${currentCycleName || 'Без названия'}» будет перемещён в архив.`
+              : `Создастся новый опрос со списком сотрудников и назначениями из «${duplicatingCycle.name}», без старых ответов и ИПР.`
+          }
+          defaultName={`${duplicatingCycle.name} (копия)`}
+          confirmLabel="Дублировать"
+          onCancel={() => setDuplicatingCycle(null)}
+          onConfirm={handleDuplicateConfirm}
+        />
+      )}
     </div>
   );
 }

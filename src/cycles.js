@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDoc, getDocs, setDoc,
+  collection, doc, getDoc, getDocs, setDoc, deleteDoc,
   query, where, limit, serverTimestamp, runTransaction, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -55,6 +55,87 @@ export async function saveCycleData(cycleId, { employees, roleAssignments }) {
 
 export async function archiveCycle(cycleId) {
   await setDoc(doc(db, 'cycles', cycleId), { status: 'archived' }, { merge: true });
+}
+
+// ── Archive management: resume / duplicate / delete ─────────────────────────
+//
+// "Exactly one active cycle per owner" is enforced by always flipping the
+// old active cycle to archived and the target cycle to active inside a
+// single writeBatch — Firestore commits a batch atomically, so no other
+// client (or reload) can ever observe a moment with zero or two active
+// cycles for this owner.
+
+// Makes an archived cycle active again, archiving whatever is currently
+// active (if anything) in the same atomic batch. Employees/assignments/
+// feedback/ipr already on the cycle are untouched — resuming just flips
+// status, nothing is reset.
+export async function resumeCycle(targetCycleId, currentActiveCycleId, ownerUid) {
+  const targetSnap = await getDoc(doc(db, 'cycles', targetCycleId));
+  if (!targetSnap.exists() || targetSnap.data().ownerUid !== ownerUid) {
+    throw new Error('Опрос не найден или недоступен');
+  }
+
+  const batch = writeBatch(db);
+  if (currentActiveCycleId && currentActiveCycleId !== targetCycleId) {
+    batch.set(doc(db, 'cycles', currentActiveCycleId), { status: 'archived' }, { merge: true });
+  }
+  batch.set(doc(db, 'cycles', targetCycleId), { status: 'active' }, { merge: true });
+  await batch.commit();
+}
+
+// Creates a brand-new active cycle copying a source cycle's employees and
+// assignments (tracks included) — but not feedback/ipr, and with each
+// assignment's completion status stripped so the copy starts fresh, exactly
+// as if freshly built in Настройка опроса. Archives whatever cycle is
+// currently active (if any) in the same atomic batch as creating the new one.
+export async function duplicateCycle(sourceCycle, name, currentActiveCycleId, ownerUid) {
+  const employees = (sourceCycle.employees || []).map(e => ({ ...e }));
+  const roleAssignments = (sourceCycle.roleAssignments || []).map(({ completed, completedAt, ...rest }) => rest);
+
+  const newRef = doc(collection(db, 'cycles'));
+  const batch = writeBatch(db);
+  if (currentActiveCycleId) {
+    batch.set(doc(db, 'cycles', currentActiveCycleId), { status: 'archived' }, { merge: true });
+  }
+  batch.set(newRef, {
+    name,
+    status: 'active',
+    createdAt: serverTimestamp(),
+    employees,
+    roleAssignments,
+    ownerUid,
+  });
+  await batch.commit();
+  return newRef.id;
+}
+
+// Permanently deletes an archived cycle and everything under it (the cycle
+// doc plus its feedback and ipr subcollections). Chunked into batches of
+// <=400 like the migrations above, since a single batch is capped at ~500
+// writes — not atomic across chunks, same tradeoff those already accept.
+// Defensively re-checks ownership even though callers only ever operate on
+// cycles already scoped to them (e.g. via getArchivedCycles(ownerUid)).
+export async function deleteCycleCompletely(cycleId, ownerUid) {
+  const cycleSnap = await getDoc(doc(db, 'cycles', cycleId));
+  if (!cycleSnap.exists() || cycleSnap.data().ownerUid !== ownerUid) {
+    throw new Error('Опрос не найден или недоступен');
+  }
+
+  const feedbackSnap = await getDocs(collection(db, 'cycles', cycleId, 'feedback'));
+  for (let i = 0; i < feedbackSnap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    feedbackSnap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  const iprSnap = await getDocs(collection(db, 'cycles', cycleId, 'ipr'));
+  for (let i = 0; i < iprSnap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    iprSnap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  await deleteDoc(doc(db, 'cycles', cycleId));
 }
 
 // ── AI-generated individual development plan (IPR) ─────────────────────────

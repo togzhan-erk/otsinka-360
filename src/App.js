@@ -252,6 +252,15 @@ function App() {
     }
   };
 
+  // resumeCycle/duplicateCycle in ArchiveTab already flip Firestore status
+  // atomically; this just points the app at the resulting cycle so the rest
+  // of the UI (Настройка опроса, Приглашения, ...) treats it as active.
+  const handleCycleActivated = (cycle) => {
+    setCurrentCycleId(cycle.id);
+    setEmployees(cycle.employees || []);
+    setRoleAssignments(cycle.roleAssignments || []);
+  };
+
   const handleOpenReport = (name, feedbacks, opts = {}) => {
     pushNav();
     setReportData({
@@ -376,6 +385,7 @@ function App() {
             onSetupComplete={handleSetupComplete}
             onDeleteAssignment={handleDeleteAssignment}
             onOpenReport={handleOpenReport}
+            onCycleActivated={handleCycleActivated}
           />
         )}
 
