@@ -6,7 +6,7 @@ import {
 } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
-import { getClients, createClient } from '../clients';
+import { listClients, createClient, setClientAccess, resetClientPassword, deleteClientAccount } from '../clients';
 import EmployeesStep from './EmployeesStep';
 import RoleAssignment from './RoleAssignment';
 import LaunchStep from './LaunchStep';
@@ -15,7 +15,7 @@ import * as XLSX from 'xlsx';
 import {
   LayoutDashboard, Settings, Mail, BarChart3, Archive, Building2,
   Plus, LogOut, Bell, Copy, Check, CheckCircle2, Trash2, Download,
-  FileText, ArrowLeft, Clock, Circle, Play,
+  FileText, ArrowLeft, Clock, Circle, Play, Search, Lock, Unlock, KeyRound,
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
@@ -892,7 +892,7 @@ function defaultSurveyName() {
   return `Опрос от ${today}`;
 }
 
-function NamePromptModal({ title, description, defaultName, confirmLabel, onCancel, onConfirm }) {
+function NamePromptModal({ title, description, label = 'Название:', inputType = 'text', defaultName, confirmLabel, onCancel, onConfirm }) {
   const [name, setName] = useState(defaultName);
 
   return (
@@ -913,9 +913,9 @@ function NamePromptModal({ title, description, defaultName, confirmLabel, onCanc
           <p style={{ color: 'var(--color-text-muted)' }}>{description}</p>
         )}
         <div className="form-group">
-          <label><strong>Название:</strong></label>
+          <label><strong>{label}</strong></label>
           <input
-            type="text"
+            type={inputType}
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="input"
@@ -1175,37 +1175,37 @@ function ArchiveTab({ onOpenReport, ownerUid, currentCycleId, currentCycleName, 
 
 // ── Clients tab (superadmin only) ───────────────────────────────────────────
 
-function ClientsTab({ currentUser }) {
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+function ClientStatusBadge({ active }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', padding: '0.15rem 0.6rem',
+      borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap',
+      background: active ? 'rgba(63, 97, 82, 0.12)' : 'rgba(138, 126, 107, 0.15)',
+      color: active ? 'var(--color-leaf)' : 'var(--color-text-muted)',
+    }}>
+      {active ? 'Активен' : 'Доступ закрыт'}
+    </span>
+  );
+}
+
+// Own small modal (not NamePromptModal — three fields, not one) for
+// "Добавить клиента". Owns its own form/error/submitting state so the
+// parent only needs to know when a client was successfully created.
+function AddClientModal({ currentUser, onCancel, onCreated }) {
   const [form, setForm] = useState({ email: '', password: '', companyName: '' });
   const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState(null);
-
-  const loadClients = () => {
-    setLoading(true);
-    getClients()
-      .then(list => { setClients(list); setLoading(false); setError(null); })
-      .catch(err => {
-        console.error('[ClientsTab] Failed to load clients:', err);
-        setError(err.message);
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => { loadClients(); }, []);
+  const [error, setError] = useState(null);
 
   const handleFieldChange = (field) => (e) => {
     setForm(prev => ({ ...prev, [field]: e.target.value }));
   };
 
-  const handleCreate = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setCreateError(null);
+    setError(null);
 
     if (!form.email.trim() || !form.password || !form.companyName.trim()) {
-      setCreateError('Заполните все поля');
+      setError('Заполните все поля');
       return;
     }
 
@@ -1218,29 +1218,29 @@ function ClientsTab({ currentUser }) {
         password: form.password,
         companyName: form.companyName.trim(),
       });
-      setForm({ email: '', password: '', companyName: '' });
-      loadClients();
+      onCreated();
     } catch (err) {
-      console.error('[ClientsTab] Failed to create client:', err);
-      setCreateError(err.message);
+      console.error('[AddClientModal] Failed to create client:', err);
+      setError(err.message);
     } finally {
       setCreating(false);
     }
   };
 
   return (
-    <div style={{ marginTop: '2rem' }}>
-      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Клиенты</h3>
-      <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
-        Управление доступами клиентов
-      </p>
-
-      <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.25rem', marginBottom: '1.75rem' }}>
-        <h4 style={{ marginTop: 0 }}>Новый клиент</h4>
-        <form onSubmit={handleCreate}>
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem',
+      }}
+      onClick={onCancel}
+    >
+      <div className="card" style={{ maxWidth: '440px', width: '100%' }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>Новый клиент</h3>
+        <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Email:</label>
-            <input type="email" className="input" value={form.email} onChange={handleFieldChange('email')} />
+            <input type="email" className="input" value={form.email} onChange={handleFieldChange('email')} autoFocus />
           </div>
           <div className="form-group">
             <label>Пароль:</label>
@@ -1251,16 +1251,143 @@ function ClientsTab({ currentUser }) {
             <input type="text" className="input" value={form.companyName} onChange={handleFieldChange('companyName')} />
           </div>
 
-          {createError && <div className="error-message">{createError}</div>}
+          {error && <div className="error-message">{error}</div>}
 
-          <button type="submit" className="btn btn-primary" disabled={creating}>
-            <Plus size={16} strokeWidth={2} />
-            {creating ? 'Создание...' : 'Создать клиента'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
+            <button type="submit" className="btn btn-primary" disabled={creating}>
+              <Plus size={16} strokeWidth={2} />
+              {creating ? 'Создание...' : 'Создать клиента'}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={creating}>
+              Отмена
+            </button>
+          </div>
         </form>
       </div>
+    </div>
+  );
+}
 
-      <h4>Существующие клиенты ({clients.length})</h4>
+function ClientsTab({ currentUser }) {
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [resettingPasswordFor, setResettingPasswordFor] = useState(null);
+  const [busyUid, setBusyUid] = useState(null);
+
+  const loadClients = () => {
+    setLoading(true);
+    currentUser.getIdToken()
+      .then(idToken => listClients({ idToken }))
+      .then(list => { setClients(list); setLoading(false); setError(null); })
+      .catch(err => {
+        console.error('[ClientsTab] Failed to load clients:', err);
+        setError(err.message);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { loadClients(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const query = search.trim().toLowerCase();
+  const filteredClients = query
+    ? clients.filter(c => c.companyName.toLowerCase().includes(query) || c.email.toLowerCase().includes(query))
+    : clients;
+
+  const handleToggleAccess = async (client) => {
+    const currentlyActive = client.active !== false;
+    const nextActive = !currentlyActive;
+
+    if (!nextActive) {
+      const confirmed = window.confirm(
+        `Закрыть доступ клиенту «${client.companyName}»? Он не сможет войти, пока вы не откроете доступ снова. Данные сохранятся.`
+      );
+      if (!confirmed) return;
+    }
+
+    setBusyUid(client.uid);
+    try {
+      const idToken = await currentUser.getIdToken();
+      await setClientAccess({ idToken, uid: client.uid, active: nextActive });
+      setClients(prev => prev.map(c => c.uid === client.uid ? { ...c, active: nextActive } : c));
+    } catch (err) {
+      console.error('[ClientsTab] Failed to change client access:', err);
+      alert('Ошибка при изменении доступа: ' + err.message);
+    } finally {
+      setBusyUid(null);
+    }
+  };
+
+  const handleResetPasswordConfirm = async (newPassword) => {
+    const client = resettingPasswordFor;
+    setResettingPasswordFor(null);
+    const trimmed = (newPassword || '').trim();
+    if (trimmed.length < 6) {
+      alert('Пароль должен быть не короче 6 символов.');
+      return;
+    }
+
+    setBusyUid(client.uid);
+    try {
+      const idToken = await currentUser.getIdToken();
+      await resetClientPassword({ idToken, uid: client.uid, newPassword: trimmed });
+      alert(`Пароль для «${client.companyName}» обновлён. Передайте его клиенту: ${trimmed}`);
+    } catch (err) {
+      console.error('[ClientsTab] Failed to reset password:', err);
+      alert('Ошибка при сбросе пароля: ' + err.message);
+    } finally {
+      setBusyUid(null);
+    }
+  };
+
+  const handleDelete = async (client) => {
+    const confirmed = window.confirm(
+      `Удалить клиента «${client.companyName}» безвозвратно? Аккаунт входа будет удалён. Это действие нельзя отменить. Опросы клиента при этом останутся в базе данных.`
+    );
+    if (!confirmed) return;
+
+    setBusyUid(client.uid);
+    try {
+      const idToken = await currentUser.getIdToken();
+      await deleteClientAccount({ idToken, uid: client.uid });
+      setClients(prev => prev.filter(c => c.uid !== client.uid));
+    } catch (err) {
+      console.error('[ClientsTab] Failed to delete client:', err);
+      alert('Ошибка при удалении клиента: ' + err.message);
+    } finally {
+      setBusyUid(null);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '2rem' }}>
+      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Клиенты</h3>
+      <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
+        Управление доступами клиентов
+      </p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+        <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '360px' }}>
+          <Search size={15} strokeWidth={2} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+          <input
+            type="text"
+            className="input"
+            placeholder="Поиск по названию или email"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ paddingLeft: '2.1rem' }}
+          />
+        </div>
+        <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+          Клиентов: {clients.length}
+        </span>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowAddModal(true)} style={{ marginLeft: 'auto' }}>
+          <Plus size={15} strokeWidth={2} />
+          Добавить клиента
+        </button>
+      </div>
 
       {loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
 
@@ -1270,24 +1397,85 @@ function ClientsTab({ currentUser }) {
         <p style={{ color: 'var(--color-text-muted)' }}>Клиентов пока нет.</p>
       )}
 
-      {!loading && clients.map(c => (
-        <div
-          key={c.id}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '0.85rem 1.1rem', border: '1px solid var(--color-border)', borderRadius: '8px',
-            marginBottom: '0.6rem', gap: '1rem', flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: '600' }}>{c.companyName}</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{c.email}</div>
+      {!loading && !error && clients.length > 0 && filteredClients.length === 0 && (
+        <p style={{ color: 'var(--color-text-muted)' }}>Ничего не найдено.</p>
+      )}
+
+      {!loading && filteredClients.map(c => {
+        const active = c.active !== false;
+        const isBusy = busyUid === c.uid;
+        return (
+          <div
+            key={c.uid}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.9rem 1.1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+              marginBottom: '0.6rem', background: '#fff', gap: '1rem', flexWrap: 'wrap',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontWeight: '600' }}>{c.companyName}</span>
+                <ClientStatusBadge active={active} />
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>{c.email}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
+                {c.createdAt ? new Date(c.createdAt).toLocaleDateString('ru-RU') : ''}
+                {' · '}{c.cyclesCount} {c.cyclesCount === 1 ? 'опрос' : 'опросов'}
+                {' · '}{c.employeesCount} сотрудников
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleToggleAccess(c)}
+                disabled={isBusy}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                {active ? <Lock size={15} strokeWidth={2} /> : <Unlock size={15} strokeWidth={2} />}
+                {active ? 'Закрыть доступ' : 'Открыть доступ'}
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setResettingPasswordFor(c)}
+                disabled={isBusy}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                <KeyRound size={15} strokeWidth={2} />
+                Сбросить пароль
+              </button>
+              <button
+                className="btn btn-icon btn-danger-ghost"
+                onClick={() => handleDelete(c)}
+                disabled={isBusy}
+                title="Удалить клиента"
+              >
+                <Trash2 size={16} strokeWidth={2} />
+              </button>
+            </div>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-            {c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('ru-RU') : ''}
-          </div>
-        </div>
-      ))}
+        );
+      })}
+
+      {showAddModal && (
+        <AddClientModal
+          currentUser={currentUser}
+          onCancel={() => setShowAddModal(false)}
+          onCreated={() => { setShowAddModal(false); loadClients(); }}
+        />
+      )}
+
+      {resettingPasswordFor && (
+        <NamePromptModal
+          title={`Сбросить пароль клиенту «${resettingPasswordFor.companyName}»?`}
+          description="Клиент не сможет войти со старым паролем. Письмо не отправляется — передайте новый пароль клиенту лично."
+          label="Новый пароль:"
+          defaultName=""
+          confirmLabel="Установить пароль"
+          onCancel={() => setResettingPasswordFor(null)}
+          onConfirm={handleResetPasswordConfirm}
+        />
+      )}
     </div>
   );
 }
