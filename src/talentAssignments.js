@@ -21,6 +21,7 @@ export function computeTalentAssignments(employees) {
       raterId: emp.id,
       evalueeId: emp.id,
       type: TALENT_ASSIGNMENT_SELF,
+      status: 'not_started',
     });
 
     const managerEmail = norm(emp.managerEmail);
@@ -31,8 +32,34 @@ export function computeTalentAssignments(employees) {
         raterId: manager.id,
         evalueeId: emp.id,
         type: TALENT_ASSIGNMENT_MANAGER,
+        status: 'not_started',
       });
     }
   });
   return assignments;
+}
+
+// Фаза 2: задачи оценки теперь несут статус (не начата/в процессе/
+// завершена), обновляемый серверными функциями (api/talent-task-save.mjs) по
+// мере заполнения формы. computeTalentAssignments выше — чистый пересчёт
+// структуры «кто кого оценивает» из текущего списка сотрудников и сам по
+// себе не знает о прогрессе; эта функция накладывает пересчитанную
+// структуру на уже сохранённые задачи, перенося status/updatedAt/
+// completedAt для каждой пары, что не изменилась (сматчено по id), и ставя
+// status='not_started' только для новых пар. Так «Сохранить распределение»
+// можно нажимать повторно (например, после правки грейда) не теряя прогресс
+// уже начатых оценок.
+export function computeMergedTalentAssignments(employees, previousAssignments = []) {
+  const fresh = computeTalentAssignments(employees);
+  const prevById = new Map((previousAssignments || []).map(a => [a.id, a]));
+  return fresh.map(a => {
+    const prev = prevById.get(a.id);
+    if (!prev) return a;
+    return {
+      ...a,
+      status: prev.status || 'not_started',
+      updatedAt: prev.updatedAt ?? null,
+      completedAt: prev.completedAt ?? null,
+    };
+  });
 }

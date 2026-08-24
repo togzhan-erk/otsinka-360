@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { getTalentMap, saveTalentMapData } from '../talentMap';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { saveTalentMapData } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
+import { ensureEmployeeTokens } from '../talentTokens';
 import TalentMapUploadStep from './TalentMapUploadStep';
 import TalentMapDistributionStep from './TalentMapDistributionStep';
 
@@ -14,33 +17,47 @@ const STEPS = [
 // компонента). Своя коллекция Firestore (src/talentMap.js: talentMaps/{uid}),
 // не пересекается с cycles/* опросов 360 — этот компонент никогда не
 // импортирует src/cycles.js и не трогает данные 360.
+//
+// Живая подписка (onSnapshot), а не разовое чтение: статус задач оценки
+// (assignments[].status) меняется на сервере по мере того, как оценивающие
+// заполняют форму по своим личным ссылкам (api/talent-task-save.mjs), и
+// экран «Распределение» должен отражать это без ручного обновления страницы.
 function TalentMapTab({ currentUser }) {
   const ownerUid = currentUser?.uid;
   const [step, setStep] = useState('upload');
   const [employees, setEmployees] = useState([]);
   const [gradeTargets, setGradeTargets] = useState(DEFAULT_GRADE_TARGETS);
+  const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!ownerUid) return;
     setLoading(true);
-    getTalentMap(ownerUid)
-      .then(data => {
+    const unsubscribe = onSnapshot(
+      doc(db, 'talentMaps', ownerUid),
+      (snap) => {
+        const data = snap.exists() ? snap.data() : null;
         setEmployees(data?.employees || []);
         setGradeTargets(data?.gradeTargets?.length ? data.gradeTargets : DEFAULT_GRADE_TARGETS);
+        setAssignments(data?.assignments || []);
         setLoading(false);
         setError(null);
-      })
-      .catch(err => {
+      },
+      (err) => {
         console.error('[TalentMapTab] Failed to load talent map:', err);
         setError(err.message);
         setLoading(false);
-      });
+      }
+    );
+    return unsubscribe;
   }, [ownerUid]);
 
-  const persistEmployees = async (next) => {
-    setEmployees(next);
+  // Каждое сохранение списка сотрудников гарантирует, что у всех есть
+  // персональный токен (src/talentTokens.js) — уже существующие токены не
+  // трогаются, иначе выданные ранее ссылки перестали бы работать.
+  const persistEmployees = async (rawNext) => {
+    const { employees: next } = ensureEmployeeTokens(rawNext);
     try {
       await saveTalentMapData(ownerUid, { employees: next });
     } catch (err) {
@@ -50,7 +67,6 @@ function TalentMapTab({ currentUser }) {
   };
 
   const persistGradeTargets = async (next) => {
-    setGradeTargets(next);
     try {
       await saveTalentMapData(ownerUid, { gradeTargets: next });
     } catch (err) {
@@ -59,8 +75,8 @@ function TalentMapTab({ currentUser }) {
     }
   };
 
-  const persistAssignments = async (assignments) => {
-    await saveTalentMapData(ownerUid, { assignments });
+  const persistAssignments = async (nextAssignments) => {
+    await saveTalentMapData(ownerUid, { assignments: nextAssignments });
   };
 
   return (
@@ -102,6 +118,7 @@ function TalentMapTab({ currentUser }) {
       {!loading && !error && step === 'distribution' && (
         <TalentMapDistributionStep
           employees={employees}
+          assignments={assignments}
           onSaveAssignments={persistAssignments}
         />
       )}

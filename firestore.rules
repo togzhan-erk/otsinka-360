@@ -75,10 +75,16 @@ rules_version = '2';
 //   - talentMaps/{ownerUid} — Карта талантов module (src/talentMap.js).
 //     One document per superadmin, doc id == the superadmin's own uid.
 //     employees/gradeTargets/assignments all live as fields on this single
-//     document (same array-fields-on-one-doc shape as cycles/{cycleId}) —
-//     no subcollections. Entirely separate from cycles/* above; nothing in
-//     this module reads or writes cycles/*, and nothing in the 360 flow
-//     reads or writes talentMaps/*.
+//     document (same array-fields-on-one-doc shape as cycles/{cycleId}).
+//     Entirely separate from cycles/* above; nothing in this module reads
+//     or writes cycles/*, and nothing in the 360 flow reads or writes
+//     talentMaps/*.
+//     └ responses/{taskId} — Фаза 2: one document per assessment task
+//       (self or manager), written exclusively by api/talent-task-save.mjs
+//       via the Admin SDK (which bypasses these rules entirely, same as
+//       api/submit-feedback.mjs does for cycles/{cycleId}/feedback) — there
+//       is no client write path here at all. Read is superadmin-only, kept
+//       for a future results view; nothing reads it yet.
 //
 // There is no manual "pick anyone and evaluate them" rater entry — the only
 // way to reach the evaluation form is a personal invite link
@@ -160,6 +166,15 @@ service cloud.firestore {
       allow read, write: if request.auth != null
                           && request.auth.uid == ownerUid
                           && request.auth.token.email == 'elctogzhan@gmail.com';
+
+      // Individual assessment answers (Фаза 2) — see the model note above.
+      // No client write path exists; only the Admin SDK writes here.
+      match /responses/{taskId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == ownerUid
+                    && request.auth.token.email == 'elctogzhan@gmail.com';
+        allow write: if false;
+      }
     }
   }
 }

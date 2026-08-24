@@ -409,6 +409,100 @@
   border-top: 1.5px solid var(--color-border);
 }
 
+/* ─── Talent Map: task list + assessment form (Фаза 2) ─────────────────── */
+.talent-task-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: all 0.2s ease;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.talent-task-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-hover);
+}
+
+.talent-indicator {
+  margin: 1.25rem 0;
+  padding: 1.25rem 1.5rem;
+  background: var(--color-surface-tint);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+}
+
+.talent-indicator h5 {
+  margin: 0 0 0.9rem;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.talent-level-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: all 0.15s ease;
+}
+
+.talent-level-option:last-child {
+  margin-bottom: 0;
+}
+
+.talent-level-option:hover {
+  border-color: var(--color-accent);
+}
+
+.talent-level-option.selected {
+  border-color: var(--color-primary);
+  background: rgba(47, 74, 62, 0.06);
+}
+
+.talent-level-num {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--color-surface-tint);
+  color: var(--color-text-muted);
+}
+
+.talent-level-option.selected .talent-level-num {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.talent-level-text {
+  font-size: 0.88rem;
+  color: var(--color-text);
+  line-height: 1.45;
+}
+
 /* ─── Thank You ──────────────────────────────────────────────────────────── */
 .thank-you-card {
   text-align: center;

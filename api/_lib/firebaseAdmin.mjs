@@ -46,4 +46,21 @@ export function getAdminDb() {
   return getFirestore(getAdminApp());
 }
 
+// Карта талантов (Фаза 2) is a single document per superadmin
+// (talentMaps/{ownerUid}), and its public rater endpoints
+// (api/talent-tasks.mjs, api/talent-task-form.mjs, api/talent-task-save.mjs)
+// are reached by an anonymous personal token, not a signed-in user — so they
+// have no request.auth.uid to read the doc id from and must look up the
+// superadmin's uid themselves via the Admin Auth API. Cached at module scope
+// since the same runtime is reused across invocations (see getAdminApp's own
+// comment) and this uid never changes.
+let cachedSuperadminUid = null;
+
+export async function getSuperadminUid() {
+  if (cachedSuperadminUid) return cachedSuperadminUid;
+  const userRecord = await getAdminAuth().getUserByEmail(SUPERADMIN_EMAIL);
+  cachedSuperadminUid = userRecord.uid;
+  return cachedSuperadminUid;
+}
+
 export { FieldValue };

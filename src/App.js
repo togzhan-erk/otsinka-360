@@ -7,6 +7,9 @@ import ThankYouScreen from './components/ThankYouScreen';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeReport from './components/EmployeeReport';
+import TalentTaskList from './components/TalentTaskList';
+import TalentAssessmentForm from './components/TalentAssessmentForm';
+import TalentThankYouScreen from './components/TalentThankYouScreen';
 import { db } from './firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import {
@@ -32,6 +35,12 @@ const INVITE = {
 };
 console.log('[App] URL params captured at module load:', window.location.search, INVITE);
 
+// Карта талантов — Фаза 2: a personal task-list link, fully independent of
+// the 360 INVITE above (own query param, own token, own serverless
+// endpoints). Captured here for the same reason INVITE is: before any
+// effect or history.replaceState can clear it from the URL.
+const TALENT_TOKEN = _initialParams.get('talentToken');
+
 function App() {
   const [userRole, setUserRole] = useState(null);
   const [stage, setStage] = useState('roleSelector');
@@ -51,6 +60,12 @@ function App() {
   const [raterFormQuestions, setRaterFormQuestions] = useState(null);
   // undefined = auth state still resolving, null = signed out, object = signed in
   const [authUser, setAuthUser] = useState(undefined);
+
+  // Карта талантов — Фаза 2: state for the personal-link task flow, entirely
+  // separate from the 360 rater state above.
+  const [talentRaterName, setTalentRaterName] = useState('');
+  const [talentTasks, setTalentTasks] = useState([]);
+  const [talentCurrentTask, setTalentCurrentTask] = useState(null);
 
   // Auth state is independent of everything else — subscribe once and keep
   // it current for as long as the app is open. Rater routes never read this;
@@ -115,6 +130,34 @@ function App() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Карта талантов — Фаза 2: resolves entirely through api/talent-tasks,
+  // api/talent-task-form and api/talent-task-save (Admin SDK), exactly like
+  // the 360 rater flow above resolves through api/rater-form +
+  // api/submit-feedback. No Firestore access from this client at all.
+  useEffect(() => {
+    if (!TALENT_TOKEN) return;
+    window.history.replaceState({}, '', '/');
+    (async () => {
+      setUserRole('talentRater');
+      setStage('talentLoading');
+      try {
+        const res = await fetch(`/api/talent-tasks?token=${encodeURIComponent(TALENT_TOKEN)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          console.warn('[App] Talent tasks lookup failed:', data?.error);
+          setStage('invalidLink');
+          return;
+        }
+        setTalentRaterName(data.raterName || '');
+        setTalentTasks(data.tasks || []);
+        setStage('talentTaskList');
+      } catch (err) {
+        console.error('[App] Error loading talent tasks:', err);
+        setStage('invalidLink');
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const captureNav = () => ({ stage, userRole, currentEvaluee, currentRaterType });
 
   const pushNav = () => {
@@ -150,6 +193,51 @@ function App() {
     setSubmittedFeedback(prev => [...prev, feedback]);
     setNavigationStack([]);
     setStage('thankYou');
+  };
+
+  // ── Карта талантов flow ─────────────────────────────────────────────────
+  const handleOpenTalentTask = async (taskId) => {
+    setStage('talentLoading');
+    try {
+      const res = await fetch(
+        `/api/talent-task-form?token=${encodeURIComponent(TALENT_TOKEN)}&taskId=${encodeURIComponent(taskId)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.warn('[App] Talent task form lookup failed:', data?.error);
+        setStage('invalidLink');
+        return;
+      }
+      setTalentCurrentTask({ id: taskId, ...data });
+      setStage('talentAssessmentForm');
+    } catch (err) {
+      console.error('[App] Error loading talent task form:', err);
+      setStage('invalidLink');
+    }
+  };
+
+  // Re-fetches the task list (fresh statuses) and returns to it — used both
+  // by the form's "back" link and after a completed submission, since the
+  // rater may have other tasks left.
+  const handleBackToTalentList = async () => {
+    setTalentCurrentTask(null);
+    setStage('talentLoading');
+    try {
+      const res = await fetch(`/api/talent-tasks?token=${encodeURIComponent(TALENT_TOKEN)}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setTalentRaterName(data.raterName || '');
+        setTalentTasks(data.tasks || []);
+      }
+    } catch (err) {
+      console.error('[App] Error refreshing talent tasks:', err);
+    }
+    setStage('talentTaskList');
+  };
+
+  const handleTalentTaskCompleted = () => {
+    setTalentCurrentTask(null);
+    setStage('talentThankYou');
   };
 
   // ── Admin flow ─────────────────────────────────────────────────────────────
@@ -329,7 +417,7 @@ function App() {
           />
         )}
 
-        {(stage === 'checkingProject' || stage === 'loadingRaterData' || (userRole === 'admin' && authUser === undefined)) && (
+        {(stage === 'checkingProject' || stage === 'loadingRaterData' || stage === 'talentLoading' || (userRole === 'admin' && authUser === undefined)) && (
           <div className="container">
             <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
               <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>Загрузка...</p>
@@ -375,6 +463,32 @@ function App() {
               <p className="subtitle">Спасибо! Ваш ответ уже сохранён — повторно проходить оценку по этой ссылке не нужно.</p>
             </div>
           </div>
+        )}
+
+        {userRole === 'talentRater' && stage === 'talentTaskList' && (
+          <TalentTaskList
+            raterName={talentRaterName}
+            tasks={talentTasks}
+            onOpenTask={handleOpenTalentTask}
+          />
+        )}
+
+        {userRole === 'talentRater' && stage === 'talentAssessmentForm' && talentCurrentTask && (
+          <TalentAssessmentForm
+            token={TALENT_TOKEN}
+            taskId={talentCurrentTask.id}
+            evalueeName={talentCurrentTask.evalueeName}
+            type={talentCurrentTask.type}
+            competencies={talentCurrentTask.competencies}
+            initialScores={talentCurrentTask.scores}
+            initialExamples={talentCurrentTask.examples}
+            onBack={handleBackToTalentList}
+            onCompleted={handleTalentTaskCompleted}
+          />
+        )}
+
+        {userRole === 'talentRater' && stage === 'talentThankYou' && (
+          <TalentThankYouScreen onBackToList={handleBackToTalentList} />
         )}
 
         {userRole === 'admin' && authUser && stage === 'adminDashboard' && (
