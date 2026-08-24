@@ -141,5 +141,17 @@ service cloud.firestore {
                                get(/databases/$(database)/documents/cycles/$(cycleId)).data.ownerUid;
       }
     }
+
+    // Карта талантов — entirely separate module/collection from cycles/*
+    // above (src/talentMap.js), doc id == owner uid. Superadmin-only, same
+    // way clients/* is: gated on both the signed-in uid matching the doc id
+    // AND the fixed superadmin email, so no other authenticated account
+    // (e.g. an HR client) can read or write here even though the doc id
+    // scoping alone would already prevent cross-owner access.
+    match /talentMaps/{ownerUid} {
+      allow read, write: if request.auth != null
+                          && request.auth.uid == ownerUid
+                          && request.auth.token.email == 'elctogzhan@gmail.com';
+    }
   }
 }

@@ -11,13 +11,14 @@ import { listClients, createClient, setClientAccess, resetClientPassword, delete
 import EmployeesStep from './EmployeesStep';
 import RoleAssignment from './RoleAssignment';
 import LaunchStep from './LaunchStep';
+import TalentMapTab from './TalentMapTab';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
 import {
   LayoutDashboard, Settings, Mail, BarChart3, Archive, Building2,
   Plus, LogOut, Bell, Copy, Check, CheckCircle2, Trash2, Download,
   FileText, ArrowLeft, Clock, Circle, Play, Search, Lock, Unlock, KeyRound,
-  Users, ClipboardList,
+  Users, ClipboardList, Target,
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
@@ -38,7 +39,7 @@ const NAV_TABS = [
 
 function AdminNavbar({ activeTab, onTabChange, isSuperadminUser, sentCount, totalAssignments, currentUser, onStartNewSurvey, onLogout }) {
   const tabs = isSuperadminUser
-    ? [...NAV_TABS, { key: 'clients', label: 'Клиенты', Icon: Building2 }]
+    ? [...NAV_TABS, { key: 'talentMap', label: 'Карта талантов', Icon: Target }, { key: 'clients', label: 'Клиенты', Icon: Building2 }]
     : NAV_TABS;
 
   return (
@@ -588,6 +589,13 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
             onCycleActivated={onCycleActivated}
             onGoToOverview={() => setActiveTab('overview')}
           />
+        )}
+
+        {/* ── Карта талантов (superadmin only) — отдельный инструмент, своя
+             структура данных и своё хранение (src/talentMap.js), не связан
+             с опросами 360 выше на этой странице. ── */}
+        {activeTab === 'talentMap' && isSuperadminUser && (
+          <TalentMapTab currentUser={currentUser} />
         )}
 
         {/* ── Clients (superadmin only) ── */}
