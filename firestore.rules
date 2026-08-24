@@ -72,6 +72,14 @@ rules_version = '2';
 //     left over from before cycles existed) is intentionally left
 //     unreachable from the client — nothing reads or writes them anymore.
 //
+//   - talentMaps/{ownerUid} — Карта талантов module (src/talentMap.js).
+//     One document per superadmin, doc id == the superadmin's own uid.
+//     employees/gradeTargets/assignments all live as fields on this single
+//     document (same array-fields-on-one-doc shape as cycles/{cycleId}) —
+//     no subcollections. Entirely separate from cycles/* above; nothing in
+//     this module reads or writes cycles/*, and nothing in the 360 flow
+//     reads or writes talentMaps/*.
+//
 // There is no manual "pick anyone and evaluate them" rater entry — the only
 // way to reach the evaluation form is a personal invite link
 // (?cycle=...&assignment=...), resolved entirely through api/rater-form.mjs
