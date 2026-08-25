@@ -75,3 +75,27 @@ export async function saveFinalAssessment(ownerUid, evalueeId, assessment) {
     [`finalAssessments.${evalueeId}`]: { ...assessment, updatedAt: serverTimestamp() },
   });
 }
+
+// Ось Y (KPI, Фаза 5a) — та же точечная запись по evalueeId, что у
+// finalAssessments/pairComments. Хранит и вручную выбранную полосу
+// (manualBand), и необязательный KPI% — src/talentNineBox.js:
+// computeEffectiveYBand() решает на чтении, каким из двух пользоваться.
+export async function saveYAxisAssessment(ownerUid, evalueeId, data) {
+  if (!ownerUid || !evalueeId) throw new Error('ownerUid и evalueeId обязательны');
+  await updateDoc(talentMapRef(ownerUid), {
+    [`yAxisAssessments.${evalueeId}`]: { ...data, updatedAt: serverTimestamp() },
+  });
+}
+
+// Ручное добавление/исключение сотрудника из автосписка пула
+// (TalentMapTalentPools.jsx) — { added: [employeeId, ...], removed: [...] }
+// на один из 4 пулов (POOL_RESERVE1/RESERVE2/WATCHLIST/REDZONE из
+// src/talentNineBox.js). Автосписок сам по себе нигде не хранится —
+// пересчитывается из quadrants + текущего размещения при каждом рендере,
+// здесь сохраняется только ручная поправка поверх него.
+export async function saveTalentPoolOverride(ownerUid, poolKey, override) {
+  if (!ownerUid || !poolKey) throw new Error('ownerUid и poolKey обязательны');
+  await updateDoc(talentMapRef(ownerUid), {
+    [`talentPoolOverrides.${poolKey}`]: override,
+  });
+}

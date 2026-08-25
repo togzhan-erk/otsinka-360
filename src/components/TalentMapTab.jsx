@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { saveTalentMapData, savePairComment, saveFinalAssessment } from '../talentMap';
+import {
+  saveTalentMapData, savePairComment, saveFinalAssessment, saveYAxisAssessment, saveTalentPoolOverride,
+} from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { DEFAULT_BAND_THRESHOLDS, isValidBandThresholds } from '../talentCompliance';
 import { ensureEmployeeTokens } from '../talentTokens';
@@ -11,6 +13,7 @@ import TalentMapDistributionStep from './TalentMapDistributionStep';
 import TalentMapProgressStep from './TalentMapProgressStep';
 import TalentMapPairReportsStep from './TalentMapPairReportsStep';
 import TalentMapFinalScoresStep from './TalentMapFinalScoresStep';
+import TalentMapNineBoxStep from './TalentMapNineBoxStep';
 
 const STEPS = [
   { key: 'upload', number: 1, title: 'Загрузка' },
@@ -18,6 +21,7 @@ const STEPS = [
   { key: 'progress', number: 3, title: 'Прохождение' },
   { key: 'pairReports', number: 4, title: 'Отчёты по парам' },
   { key: 'finalScores', number: 5, title: 'Согласованные баллы' },
+  { key: 'nineBox', number: 6, title: 'Карта талантов' },
 ];
 
 // Карта талантов — отдельный инструмент, доступный только суперадмину
@@ -39,6 +43,9 @@ function TalentMapTab({ currentUser }) {
   const [pairComments, setPairComments] = useState({});
   const [finalAssessments, setFinalAssessments] = useState({});
   const [bandThresholds, setBandThresholds] = useState(DEFAULT_BAND_THRESHOLDS);
+  const [yAxisAssessments, setYAxisAssessments] = useState({});
+  const [quadrants, setQuadrants] = useState({});
+  const [talentPoolOverrides, setTalentPoolOverrides] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -55,6 +62,9 @@ function TalentMapTab({ currentUser }) {
         setPairComments(data?.pairComments || {});
         setFinalAssessments(data?.finalAssessments || {});
         setBandThresholds(isValidBandThresholds(data?.bandThresholds) ? data.bandThresholds : DEFAULT_BAND_THRESHOLDS);
+        setYAxisAssessments(data?.yAxisAssessments || {});
+        setQuadrants(data?.quadrants || {});
+        setTalentPoolOverrides(data?.talentPoolOverrides || {});
         setLoading(false);
         setError(null);
       },
@@ -119,6 +129,33 @@ function TalentMapTab({ currentUser }) {
     } catch (err) {
       console.error('[TalentMapTab] Failed to save band thresholds:', err);
       alert('Ошибка сохранения порогов: ' + err.message);
+    }
+  };
+
+  const persistYAxisAssessment = async (evalueeId, data) => {
+    try {
+      await saveYAxisAssessment(ownerUid, evalueeId, data);
+    } catch (err) {
+      console.error('[TalentMapTab] Failed to save Y-axis assessment:', err);
+      alert('Ошибка сохранения оси Y: ' + err.message);
+    }
+  };
+
+  const persistQuadrants = async (next) => {
+    try {
+      await saveTalentMapData(ownerUid, { quadrants: next });
+    } catch (err) {
+      console.error('[TalentMapTab] Failed to save quadrants:', err);
+      alert('Ошибка сохранения настройки ячеек: ' + err.message);
+    }
+  };
+
+  const persistPoolOverride = async (poolKey, override) => {
+    try {
+      await saveTalentPoolOverride(ownerUid, poolKey, override);
+    } catch (err) {
+      console.error('[TalentMapTab] Failed to save talent pool override:', err);
+      alert('Ошибка сохранения пула: ' + err.message);
     }
   };
 
@@ -194,6 +231,21 @@ function TalentMapTab({ currentUser }) {
           ownerUid={ownerUid}
           finalAssessments={finalAssessments}
           onSaveFinalAssessment={persistFinalAssessment}
+        />
+      )}
+
+      {!loading && !error && step === 'nineBox' && (
+        <TalentMapNineBoxStep
+          employees={employees}
+          assignments={assignments}
+          bandThresholds={bandThresholds}
+          finalAssessments={finalAssessments}
+          yAxisAssessments={yAxisAssessments}
+          quadrants={quadrants}
+          talentPoolOverrides={talentPoolOverrides}
+          onSaveYAxis={persistYAxisAssessment}
+          onSaveQuadrants={persistQuadrants}
+          onSavePoolOverride={persistPoolOverride}
         />
       )}
     </div>
