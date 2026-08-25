@@ -60,3 +60,18 @@ export async function savePairComment(ownerUid, evalueeId, comment) {
     [`pairComments.${evalueeId}`]: { ...payload, generatedAt: serverTimestamp() },
   });
 }
+
+// Финальные (согласованные на интервью руководитель–сотрудник) баллы и
+// рассчитанный по ним индекс соответствия (src/talentCompliance.js —
+// расчёт полностью детерминированный, эта функция только сохраняет уже
+// готовый результат). Тот же приём точечного ключа, что у pairComments —
+// finalAssessments.<evalueeId> обновляется, не трогая записи других
+// сотрудников. Расчёт хранится вместе со снимком грейда/целевого балла, на
+// момент которых он был сделан, чтобы Фаза 5 (карта 9-box) могла просто
+// прочитать effectiveBand, не пересчитывая ничего заново.
+export async function saveFinalAssessment(ownerUid, evalueeId, assessment) {
+  if (!ownerUid || !evalueeId) throw new Error('ownerUid и evalueeId обязательны');
+  await updateDoc(talentMapRef(ownerUid), {
+    [`finalAssessments.${evalueeId}`]: { ...assessment, updatedAt: serverTimestamp() },
+  });
+}

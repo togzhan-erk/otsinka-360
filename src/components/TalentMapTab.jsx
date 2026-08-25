@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { saveTalentMapData, savePairComment } from '../talentMap';
+import { saveTalentMapData, savePairComment, saveFinalAssessment } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { ensureEmployeeTokens } from '../talentTokens';
 import { computeMergedTalentAssignments } from '../talentAssignments';
@@ -9,12 +9,14 @@ import TalentMapUploadStep from './TalentMapUploadStep';
 import TalentMapDistributionStep from './TalentMapDistributionStep';
 import TalentMapProgressStep from './TalentMapProgressStep';
 import TalentMapPairReportsStep from './TalentMapPairReportsStep';
+import TalentMapFinalScoresStep from './TalentMapFinalScoresStep';
 
 const STEPS = [
   { key: 'upload', number: 1, title: 'Загрузка' },
   { key: 'distribution', number: 2, title: 'Распределение' },
   { key: 'progress', number: 3, title: 'Прохождение' },
   { key: 'pairReports', number: 4, title: 'Отчёты по парам' },
+  { key: 'finalScores', number: 5, title: 'Согласованные баллы' },
 ];
 
 // Карта талантов — отдельный инструмент, доступный только суперадмину
@@ -34,6 +36,7 @@ function TalentMapTab({ currentUser }) {
   const [gradeTargets, setGradeTargets] = useState(DEFAULT_GRADE_TARGETS);
   const [assignments, setAssignments] = useState([]);
   const [pairComments, setPairComments] = useState({});
+  const [finalAssessments, setFinalAssessments] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -48,6 +51,7 @@ function TalentMapTab({ currentUser }) {
         setGradeTargets(data?.gradeTargets?.length ? data.gradeTargets : DEFAULT_GRADE_TARGETS);
         setAssignments(data?.assignments || []);
         setPairComments(data?.pairComments || {});
+        setFinalAssessments(data?.finalAssessments || {});
         setLoading(false);
         setError(null);
       },
@@ -100,6 +104,10 @@ function TalentMapTab({ currentUser }) {
 
   const persistPairComment = async (evalueeId, comment) => {
     await savePairComment(ownerUid, evalueeId, comment);
+  };
+
+  const persistFinalAssessment = async (evalueeId, assessment) => {
+    await saveFinalAssessment(ownerUid, evalueeId, assessment);
   };
 
   return (
@@ -160,6 +168,17 @@ function TalentMapTab({ currentUser }) {
           ownerUid={ownerUid}
           pairComments={pairComments}
           onSaveComment={persistPairComment}
+        />
+      )}
+
+      {!loading && !error && step === 'finalScores' && (
+        <TalentMapFinalScoresStep
+          employees={employees}
+          assignments={assignments}
+          gradeTargets={gradeTargets}
+          ownerUid={ownerUid}
+          finalAssessments={finalAssessments}
+          onSaveFinalAssessment={persistFinalAssessment}
         />
       )}
     </div>
