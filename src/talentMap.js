@@ -2,24 +2,53 @@
 // коллекция (talentMaps), не пересекается ни с одним путём, который
 // использует модуль опросов 360 (src/cycles.js: cycles/{cycleId}/...).
 //
-// Один документ на владельца: talentMaps/{ownerUid}. Модуль доступен
-// только суперадмину (проверяется на уровне UI — src/auth.js:
-// isSuperadmin), поэтому одного документа на аккаунт достаточно для
-// Фазы 1/2/3; данные хранятся полями на этом документе (employees,
-// gradeTargets, assignments, pairComments), как и cycles/{cycleId} хранит
-// employees и roleAssignments — тот же паттерн, другая коллекция. Чтение —
-// через живую подписку onSnapshot прямо в TalentMapTab.jsx (тот же приём,
-// что AdminDashboard.jsx уже использует для cycles/{cycleId}), так что этот
+// Один ОБЩИЙ документ на всех разрешённых пользователей:
+// talentMaps/{ownerUid}, где ownerUid — фиксированный uid, к которому этот
+// документ был привязан изначально (не uid текущего вошедшего). Доступ —
+// по email из src/talentAccess.js: TALENT_MAP_ALLOWED_EMAILS (несколько
+// человек могут работать с одной и той же картой); проверяется и в
+// firestore.rules, и (для публичных, не требующих логина эндпоинтов вроде
+// ссылки оценивающего) через getSuperadminUid() в api/talent.mjs. Клиент
+// узнаёт ownerUid через resolveTalentMapOwnerUid() ниже, а не берёт его из
+// currentUser.uid — иначе второй разрешённый пользователь читал/писал бы
+// в свой собственный, отдельный (и пустой) документ.
+//
+// Данные хранятся полями на этом документе (employees, gradeTargets,
+// assignments, pairComments, ...), как и cycles/{cycleId} хранит employees
+// и roleAssignments — тот же паттерн, другая коллекция. Чтение — через
+// живую подписку onSnapshot прямо в TalentMapTab.jsx (тот же приём, что
+// AdminDashboard.jsx уже использует для cycles/{cycleId}), так что этот
 // модуль отвечает только за запись плюс разовые чтения ответов оценки
 // (responses/{taskId} — отдельные документы, каждый пишется сервером через
-// api/talent-task-save.mjs, читаются здесь только суперадмином для отчёта
-// по паре).
+// api/talent.mjs (action=save-task), читаются здесь только для отчёта по
+// паре).
 
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 function talentMapRef(ownerUid) {
   return doc(db, 'talentMaps', ownerUid);
+}
+
+// Резолвит общий uid-владелец документа карты талантов через сервер
+// (api/talent.mjs, action=map-owner-uid) — сервер всегда возвращает uid,
+// найденный по фиксированному владельческому email (getSuperadminUid в
+// api/_lib/firebaseAdmin.mjs), а не по email вызывающего, поэтому все
+// пользователи из TALENT_MAP_ALLOWED_EMAILS попадают на один и тот же
+// документ. Сервер сам проверяет idToken и что email вызывающего входит в
+// список — здесь дополнительных проверок нет, только запрос.
+export async function resolveTalentMapOwnerUid(idToken) {
+  if (!idToken) throw new Error('idToken обязателен');
+  const res = await fetch('/api/talent', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'map-owner-uid', idToken }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || 'Не удалось определить карту талантов.');
+  }
+  return data.ownerUid;
 }
 
 // Частичное обновление (merge: true) — можно сохранять только employees,

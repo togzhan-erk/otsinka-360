@@ -3,7 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   saveTalentMapData, savePairComment, saveFinalAssessment, saveYAxisAssessment, saveTalentPoolOverride,
-  saveIdpPlan,
+  saveIdpPlan, resolveTalentMapOwnerUid,
 } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { DEFAULT_BAND_THRESHOLDS, isValidBandThresholds } from '../talentCompliance';
@@ -27,18 +27,26 @@ const STEPS = [
   { key: 'idp', number: 7, title: 'План развития' },
 ];
 
-// Карта талантов — отдельный инструмент, доступный только суперадмину
-// (проверка isSuperadmin делается в AdminDashboard.jsx перед рендером этого
-// компонента). Своя коллекция Firestore (src/talentMap.js: talentMaps/{uid}),
-// не пересекается с cycles/* опросов 360 — этот компонент никогда не
-// импортирует src/cycles.js и не трогает данные 360.
+// Карта талантов — отдельный инструмент, доступный email из
+// src/talentAccess.js: TALENT_MAP_ALLOWED_EMAILS (проверка делается в
+// AdminDashboard.jsx перед рендером этого компонента). Своя коллекция
+// Firestore (src/talentMap.js: talentMaps/{ownerUid}), не пересекается с
+// cycles/* опросов 360 — этот компонент никогда не импортирует
+// src/cycles.js и не трогает данные 360.
+//
+// ownerUid — ОБЩИЙ для всех разрешённых пользователей id документа,
+// резолвится через resolveTalentMapOwnerUid() (сервер всегда возвращает
+// один и тот же uid, привязанный к фиксированному email-владельцу, а не
+// к тому, кто сейчас вошёл) — иначе каждый разрешённый пользователь читал
+// бы/писал в свой собственный, отдельный документ вместо общей карты.
 //
 // Живая подписка (onSnapshot), а не разовое чтение: статус задач оценки
 // (assignments[].status) меняется на сервере по мере того, как оценивающие
-// заполняют форму по своим личным ссылкам (api/talent-task-save.mjs), и
-// экран «Распределение» должен отражать это без ручного обновления страницы.
+// заполняют форму по своим личным ссылкам (api/talent.mjs, action=save-task),
+// и экран «Распределение» должен отражать это без ручного обновления страницы.
 function TalentMapTab({ currentUser }) {
-  const ownerUid = currentUser?.uid;
+  const [ownerUid, setOwnerUid] = useState(null);
+  const [ownerError, setOwnerError] = useState(null);
   const [step, setStep] = useState('upload');
   const [employees, setEmployees] = useState([]);
   const [gradeTargets, setGradeTargets] = useState(DEFAULT_GRADE_TARGETS);
@@ -52,6 +60,22 @@ function TalentMapTab({ currentUser }) {
   const [idpPlans, setIdpPlans] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    currentUser.getIdToken()
+      .then((idToken) => resolveTalentMapOwnerUid(idToken))
+      .then((uid) => { if (!cancelled) setOwnerUid(uid); })
+      .catch((err) => {
+        console.error('[TalentMapTab] Failed to resolve talent map owner:', err);
+        if (!cancelled) {
+          setOwnerError(err.message);
+          setLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [currentUser]);
 
   useEffect(() => {
     if (!ownerUid) return;
@@ -192,10 +216,11 @@ function TalentMapTab({ currentUser }) {
         ))}
       </div>
 
-      {loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
-      {error && <div className="error-message">Ошибка загрузки карты талантов: {error}</div>}
+      {ownerError && <div className="error-message">Ошибка доступа к карте талантов: {ownerError}</div>}
+      {!ownerError && loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
+      {!ownerError && error && <div className="error-message">Ошибка загрузки карты талантов: {error}</div>}
 
-      {!loading && !error && step === 'upload' && (
+      {!ownerError && !loading && !error && step === 'upload' && (
         <TalentMapUploadStep
           employees={employees}
           gradeTargets={gradeTargets}
@@ -206,7 +231,7 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!loading && !error && step === 'distribution' && (
+      {!ownerError && !loading && !error && step === 'distribution' && (
         <TalentMapDistributionStep
           employees={employees}
           assignments={assignments}
@@ -214,14 +239,14 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!loading && !error && step === 'progress' && (
+      {!ownerError && !loading && !error && step === 'progress' && (
         <TalentMapProgressStep
           employees={employees}
           assignments={assignments}
         />
       )}
 
-      {!loading && !error && step === 'pairReports' && (
+      {!ownerError && !loading && !error && step === 'pairReports' && (
         <TalentMapPairReportsStep
           employees={employees}
           assignments={assignments}
@@ -231,7 +256,7 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!loading && !error && step === 'finalScores' && (
+      {!ownerError && !loading && !error && step === 'finalScores' && (
         <TalentMapFinalScoresStep
           employees={employees}
           assignments={assignments}
@@ -243,7 +268,7 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!loading && !error && step === 'nineBox' && (
+      {!ownerError && !loading && !error && step === 'nineBox' && (
         <TalentMapNineBoxStep
           employees={employees}
           assignments={assignments}
@@ -258,7 +283,7 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!loading && !error && step === 'idp' && (
+      {!ownerError && !loading && !error && step === 'idp' && (
         <TalentMapIdpStep
           employees={employees}
           assignments={assignments}

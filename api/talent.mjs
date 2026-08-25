@@ -1,5 +1,6 @@
-import { getAdminDb, getSuperadminUid, FieldValue } from './_lib/firebaseAdmin.mjs';
+import { getAdminAuth, getAdminDb, getSuperadminUid, FieldValue } from './_lib/firebaseAdmin.mjs';
 import { TALENT_COMPETENCIES, getAllTalentIndicatorIds } from '../src/talentCompetencies.js';
+import { TALENT_MAP_ALLOWED_EMAILS } from '../src/talentAccess.js';
 
 // Карта талантов — единый роутер серверных функций модуля. Объединяет то,
 // что раньше было пятью отдельными файлами (api/talent-tasks.mjs,
@@ -14,6 +15,14 @@ import { TALENT_COMPETENCIES, getAllTalentIndicatorIds } from '../src/talentComp
 //   POST /api/talent {action:'save-task', token, taskId, scores, examples, finalize}
 //   POST /api/talent {action:'generate-pair-comment', evalueeName, managerName, competencies, discrepancies}
 //   POST /api/talent {action:'generate-idp', employeeName, grade, targetScore, competencies, weakest, strongest}
+//   POST /api/talent {action:'map-owner-uid', idToken}
+//
+// action=map-owner-uid — добавлено, чтобы карта талантов была ОДНИМ общим
+// документом (talentMaps/{ownerUid}) для всех email из
+// TALENT_MAP_ALLOWED_EMAILS, а не отдельным документом на каждого: doc id
+// всегда резолвится через getSuperadminUid() (фиксированный email-владелец
+// документа), а не берётся из uid вызывающего — иначе второй разрешённый
+// пользователь читал/писал бы в пустой talentMaps/{его-собственный-uid}.
 //
 // api/rater-form.mjs, api/submit-feedback.mjs и api/generate-ipr.mjs (360)
 // НЕ трогались и остаются отдельными файлами — на них завязаны уже
@@ -548,6 +557,53 @@ async function handleGenerateIdp(req, res, body) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// action=map-owner-uid — POST. Resolves the single shared talentMaps
+// document id for an authenticated, allowed caller. Unlike the AI actions
+// above (stateless proxies to Anthropic, no auth needed — same pattern as
+// api/generate-ipr.mjs), this one identifies the caller, so it verifies
+// idToken and checks their email against TALENT_MAP_ALLOWED_EMAILS before
+// returning anything.
+// ─────────────────────────────────────────────────────────────────────────
+async function handleMapOwnerUid(req, res, body) {
+  const { idToken } = body;
+  if (!idToken) {
+    res.status(400).json({ error: 'Не передан idToken' });
+    return;
+  }
+
+  let adminAuth;
+  try {
+    adminAuth = getAdminAuth();
+  } catch (err) {
+    console.error('[talent:map-owner-uid] Admin SDK init failed:', err.message);
+    res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
+    return;
+  }
+
+  let decoded;
+  try {
+    decoded = await adminAuth.verifyIdToken(idToken);
+  } catch (err) {
+    console.error('[talent:map-owner-uid] idToken verification failed:', err.message);
+    res.status(401).json({ error: 'Не удалось подтвердить личность. Войдите заново.' });
+    return;
+  }
+
+  if (!TALENT_MAP_ALLOWED_EMAILS.includes(decoded.email)) {
+    res.status(403).json({ error: 'Недостаточно прав для этого действия' });
+    return;
+  }
+
+  try {
+    const ownerUid = await getSuperadminUid();
+    res.status(200).json({ ownerUid });
+  } catch (err) {
+    console.error('[talent:map-owner-uid] Failed to resolve owner uid:', err.message);
+    res.status(500).json({ error: 'Не удалось определить карту талантов.' });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Router
 // ─────────────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
@@ -585,6 +641,10 @@ export default async function handler(req, res) {
     }
     if (action === 'generate-idp') {
       await handleGenerateIdp(req, res, body);
+      return;
+    }
+    if (action === 'map-owner-uid') {
+      await handleMapOwnerUid(req, res, body);
       return;
     }
     res.status(400).json({ error: 'Неизвестное действие' });

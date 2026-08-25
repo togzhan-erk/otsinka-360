@@ -6,6 +6,7 @@ import {
 } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
+import { isTalentMapAllowed } from '../talentAccess';
 import { LogoIcon } from './Logo';
 import { listClients, createClient, setClientAccess, resetClientPassword, deleteClientAccount } from '../clients';
 import EmployeesStep from './EmployeesStep';
@@ -37,10 +38,15 @@ const NAV_TABS = [
   { key: 'archive', label: 'Архив', Icon: Archive },
 ];
 
-function AdminNavbar({ activeTab, onTabChange, isSuperadminUser, sentCount, totalAssignments, currentUser, onStartNewSurvey, onLogout }) {
-  const tabs = isSuperadminUser
-    ? [...NAV_TABS, { key: 'talentMap', label: 'Карта талантов', Icon: Target }, { key: 'clients', label: 'Клиенты', Icon: Building2 }]
-    : NAV_TABS;
+function AdminNavbar({ activeTab, onTabChange, isSuperadminUser, isTalentMapUser, sentCount, totalAssignments, currentUser, onStartNewSurvey, onLogout }) {
+  // «Карта талантов» и «Клиенты» — независимые проверки: карта талантов
+  // доступна всем email из TALENT_MAP_ALLOWED_EMAILS, а «Клиенты» — строго
+  // суперадмину, даже если это один и тот же список из одного человека.
+  const tabs = [
+    ...NAV_TABS,
+    ...(isTalentMapUser ? [{ key: 'talentMap', label: 'Карта талантов', Icon: Target }] : []),
+    ...(isSuperadminUser ? [{ key: 'clients', label: 'Клиенты', Icon: Building2 }] : []),
+  ];
 
   return (
     <div className="admin-navbar">
@@ -275,6 +281,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const cycleYear = liveCycleCreatedAt?.toDate ? liveCycleCreatedAt.toDate().getFullYear() : new Date().getFullYear();
   const hasEmployees = employees.length > 0;
   const isSuperadminUser = isSuperadmin(currentUser);
+  const isTalentMapUser = isTalentMapAllowed(currentUser);
   // Only a real company name counts here — the email fallback that used to
   // live on this variable is never shown as a title anywhere anymore (it's
   // still available separately, in the navbar, next to "Выйти").
@@ -313,6 +320,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
         activeTab={activeTab}
         onTabChange={setActiveTab}
         isSuperadminUser={isSuperadminUser}
+        isTalentMapUser={isTalentMapUser}
         sentCount={sentCount}
         totalAssignments={totalAssignments}
         currentUser={currentUser}
@@ -591,10 +599,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           />
         )}
 
-        {/* ── Карта талантов (superadmin only) — отдельный инструмент, своя
-             структура данных и своё хранение (src/talentMap.js), не связан
-             с опросами 360 выше на этой странице. ── */}
-        {activeTab === 'talentMap' && isSuperadminUser && (
+        {/* ── Карта талантов (доступ по TALENT_MAP_ALLOWED_EMAILS, не только
+             суперадмину) — отдельный инструмент, своя структура данных и
+             своё хранение (src/talentMap.js), не связан с опросами 360
+             выше на этой странице. ── */}
+        {activeTab === 'talentMap' && isTalentMapUser && (
           <TalentMapTab currentUser={currentUser} />
         )}
 
