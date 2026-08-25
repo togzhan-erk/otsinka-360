@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { saveTalentMapData } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { ensureEmployeeTokens } from '../talentTokens';
+import { computeMergedTalentAssignments } from '../talentAssignments';
 import TalentMapUploadStep from './TalentMapUploadStep';
 import TalentMapDistributionStep from './TalentMapDistributionStep';
 
@@ -53,13 +54,25 @@ function TalentMapTab({ currentUser }) {
     return unsubscribe;
   }, [ownerUid]);
 
-  // Каждое сохранение списка сотрудников гарантирует, что у всех есть
-  // персональный токен (src/talentTokens.js) — уже существующие токены не
-  // трогаются, иначе выданные ранее ссылки перестали бы работать.
+  // Каждое сохранение списка сотрудников:
+  //  1) гарантирует, что у всех есть персональный токен (src/talentTokens.js)
+  //     — уже существующие токены не трогаются, иначе выданные ранее ссылки
+  //     перестали бы работать;
+  //  2) пересчитывает и сохраняет assignments В ТОМ ЖЕ Firestore-вызове.
+  // Раньше assignments сохранялись только когда админ отдельно заходил на
+  // шаг «Распределение» и жал «Сохранить распределение» — до этого клика
+  // поле assignments в talentMaps/{uid} оставалось пустым, и личная ссылка
+  // сотрудника показывала «Задач пока нет» даже при реально существующих
+  // задачах (api/talent-tasks.mjs читает assignments из этого же документа).
+  // Теперь сотрудники и назначения всегда сохраняются согласованно — одним
+  // и тем же вызовом saveTalentMapData, сразу после загрузки Excel.
+  // computeMergedTalentAssignments (не «с нуля») сохраняет status уже
+  // начатых/завершённых задач при пересчёте.
   const persistEmployees = async (rawNext) => {
     const { employees: next } = ensureEmployeeTokens(rawNext);
+    const mergedAssignments = computeMergedTalentAssignments(next, assignments);
     try {
-      await saveTalentMapData(ownerUid, { employees: next });
+      await saveTalentMapData(ownerUid, { employees: next, assignments: mergedAssignments });
     } catch (err) {
       console.error('[TalentMapTab] Failed to save employees:', err);
       alert('Ошибка сохранения сотрудников: ' + err.message);

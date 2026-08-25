@@ -62,6 +62,27 @@ export default async function handler(req, res) {
         };
       });
 
+    // Every employee always has at least a self-assessment task once
+    // assignments have actually been computed and saved (see
+    // TalentMapTab.jsx's persistEmployees) — so an empty result here for a
+    // *found* employee almost always means the talentMaps doc's assignments
+    // field is stale/missing rather than "this person genuinely has zero
+    // tasks". Logged so it's visible in Vercel function logs instead of
+    // silently rendering "Задач пока нет" with no way to tell why.
+    if (tasks.length === 0) {
+      if (assignments.length === 0) {
+        console.error(
+          '[talent-tasks] Employee found but assignments field is empty on talentMaps/%s — distribution was never computed/saved. employeeId=%s, token=%s',
+          ownerUid, employee.id, token
+        );
+      } else {
+        console.error(
+          '[talent-tasks] Employee found but no assignment has raterId matching this employee — assignments may be stale (employee added/edited after the last save). talentMaps/%s, employeeId=%s, assignmentsCount=%d',
+          ownerUid, employee.id, assignments.length
+        );
+      }
+    }
+
     res.status(200).json({ raterName: employee.fio, tasks });
   } catch (err) {
     console.error('[talent-tasks] Unexpected error:', err);
