@@ -3,6 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { saveTalentMapData, savePairComment, saveFinalAssessment } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
+import { DEFAULT_BAND_THRESHOLDS, isValidBandThresholds } from '../talentCompliance';
 import { ensureEmployeeTokens } from '../talentTokens';
 import { computeMergedTalentAssignments } from '../talentAssignments';
 import TalentMapUploadStep from './TalentMapUploadStep';
@@ -37,6 +38,7 @@ function TalentMapTab({ currentUser }) {
   const [assignments, setAssignments] = useState([]);
   const [pairComments, setPairComments] = useState({});
   const [finalAssessments, setFinalAssessments] = useState({});
+  const [bandThresholds, setBandThresholds] = useState(DEFAULT_BAND_THRESHOLDS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -52,6 +54,7 @@ function TalentMapTab({ currentUser }) {
         setAssignments(data?.assignments || []);
         setPairComments(data?.pairComments || {});
         setFinalAssessments(data?.finalAssessments || {});
+        setBandThresholds(isValidBandThresholds(data?.bandThresholds) ? data.bandThresholds : DEFAULT_BAND_THRESHOLDS);
         setLoading(false);
         setError(null);
       },
@@ -110,6 +113,15 @@ function TalentMapTab({ currentUser }) {
     await saveFinalAssessment(ownerUid, evalueeId, assessment);
   };
 
+  const persistBandThresholds = async (next) => {
+    try {
+      await saveTalentMapData(ownerUid, { bandThresholds: next });
+    } catch (err) {
+      console.error('[TalentMapTab] Failed to save band thresholds:', err);
+      alert('Ошибка сохранения порогов: ' + err.message);
+    }
+  };
+
   return (
     <div>
       <h3 style={{ margin: 0 }}>Карта талантов</h3>
@@ -143,6 +155,8 @@ function TalentMapTab({ currentUser }) {
           gradeTargets={gradeTargets}
           onSaveEmployees={persistEmployees}
           onSaveGradeTargets={persistGradeTargets}
+          bandThresholds={bandThresholds}
+          onSaveBandThresholds={persistBandThresholds}
         />
       )}
 
@@ -176,6 +190,7 @@ function TalentMapTab({ currentUser }) {
           employees={employees}
           assignments={assignments}
           gradeTargets={gradeTargets}
+          bandThresholds={bandThresholds}
           ownerUid={ownerUid}
           finalAssessments={finalAssessments}
           onSaveFinalAssessment={persistFinalAssessment}

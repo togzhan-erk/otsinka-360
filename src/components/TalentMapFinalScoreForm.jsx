@@ -4,7 +4,7 @@ import { getTalentResponse } from '../talentMap';
 import { TALENT_COMPETENCIES, getAllTalentIndicatorIds } from '../talentCompetencies';
 import {
   computeCompetencyAverages, computeOverallAverage, getGradeTarget, computeComplianceIndex, computeBand,
-  isCeilingGrade, TALENT_BAND_LABELS, TALENT_BAND_STYLE, TALENT_BAND_EXCEEDS,
+  isCeilingGrade, TALENT_BAND_LABELS, TALENT_BAND_STYLE, TALENT_BAND_EXCEEDS, DEFAULT_BAND_THRESHOLDS,
 } from '../talentCompliance';
 
 const LEVELS = [1, 2, 3, 4];
@@ -51,7 +51,8 @@ function MiniStat({ label, value, band }) {
 // именно ими, а не заново оценкой руководителя. Индекс соответствия и
 // полоса оси X считаются детерминированно в src/talentCompliance.js — AI
 // в этот расчёт не вовлечён.
-function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, existingAssessment, onSave }) {
+function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, bandThresholds, existingAssessment, onSave }) {
+  const thresholds = bandThresholds || DEFAULT_BAND_THRESHOLDS;
   const { evaluee, manager, managerTask } = pairInfo;
   const [managerResponse, setManagerResponse] = useState(undefined);
   const [scores, setScores] = useState(null);
@@ -101,7 +102,7 @@ function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, existingAss
       const competencyAverages = computeCompetencyAverages(scores);
       const overallAverage = computeOverallAverage(competencyAverages);
       const complianceIndex = computeComplianceIndex(overallAverage, targetScore);
-      const band = computeBand(complianceIndex);
+      const band = computeBand(complianceIndex, thresholds);
 
       await onSave(evaluee.id, {
         scores,
@@ -130,7 +131,7 @@ function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, existingAss
   const competencyAverages = computeCompetencyAverages(scores);
   const overallAverage = computeOverallAverage(competencyAverages);
   const complianceIndex = computeComplianceIndex(overallAverage, targetScore);
-  const band = computeBand(complianceIndex);
+  const band = computeBand(complianceIndex, thresholds);
   const effectiveBand = overrideChecked ? TALENT_BAND_EXCEEDS : band;
 
   return (
@@ -185,8 +186,8 @@ function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, existingAss
             padding: '0.85rem 1rem', borderRadius: '10px', background: '#FCEBD9', border: '1px solid rgba(226,145,71,0.4)',
             fontSize: '0.85rem', color: 'var(--color-text)', lineHeight: 1.5,
           }}>
-            У этого грейда самый высокий целевой балл в таблице — формула почти никогда не даёт «Превышает» (для
-            этого средний балл должен быть выше 4, а шкала ограничена 4). Переход в «Превышает» для такого грейда —
+            У этого грейда самый высокий целевой балл в таблице — формула почти никогда не даёт «Превосходит» (для
+            этого средний балл должен быть выше 4, а шкала ограничена 4). Переход в «Превосходит» для такого грейда —
             решение калибровочного комитета, не формулы.
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
               <input
@@ -194,7 +195,7 @@ function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, existingAss
                 checked={overrideChecked}
                 onChange={(e) => { setOverrideChecked(e.target.checked); setSaved(false); }}
               />
-              Присвоить итоговую полосу «Превышает» решением комитета
+              Присвоить итоговую полосу «Превосходит» решением комитета
             </label>
             {overrideChecked && (
               <input

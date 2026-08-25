@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Paperclip, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { computeHierarchyDepths, suggestGradeByDepth } from '../talentGrades';
+import { DEFAULT_BAND_THRESHOLDS, BAND_THRESHOLD_MIN, BAND_THRESHOLD_MAX, isValidBandThresholds } from '../talentCompliance';
 
 const FIO_HEADERS = ['фио', 'фио сотрудника'];
 const EMAIL_HEADERS = ['email сотрудника', 'email', 'почта'];
@@ -90,7 +91,7 @@ function GradeBadge({ gradeSource }) {
 // таблица целевых баллов по грейдам. Изменения сохраняются сразу через
 // переданные onSave*-колбэки (тот же паттерн, что и в EmployeesStep.jsx
 // для опросов 360) — отдельного черновика/кнопки «Сохранить всё» нет.
-function TalentMapUploadStep({ employees, gradeTargets, onSaveEmployees, onSaveGradeTargets }) {
+function TalentMapUploadStep({ employees, gradeTargets, onSaveEmployees, onSaveGradeTargets, bandThresholds, onSaveBandThresholds }) {
   const [error, setError] = useState('');
   const [gradeDrafts, setGradeDrafts] = useState({});
 
@@ -215,8 +216,13 @@ function TalentMapUploadStep({ employees, gradeTargets, onSaveEmployees, onSaveG
         </div>
       )}
 
-      <div style={{ marginTop: '2.5rem' }}>
-        <GradeTargetsEditor gradeTargets={gradeTargets} onSave={onSaveGradeTargets} />
+      <div style={{ marginTop: '2.5rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: '1 1 360px', minWidth: '320px' }}>
+          <GradeTargetsEditor gradeTargets={gradeTargets} onSave={onSaveGradeTargets} />
+        </div>
+        <div style={{ flex: '1 1 320px', minWidth: '280px' }}>
+          <BandThresholdsEditor bandThresholds={bandThresholds} onSave={onSaveBandThresholds} />
+        </div>
       </div>
     </div>
   );
@@ -308,6 +314,87 @@ function GradeTargetsEditor({ gradeTargets, onSave }) {
         </button>
         <button className="btn btn-primary btn-sm" onClick={handleSave}>
           Сохранить таблицу
+        </button>
+        {saved && <span style={{ color: 'var(--color-success)', fontSize: '0.85rem', fontWeight: 500 }}>Сохранено</span>}
+      </div>
+    </div>
+  );
+}
+
+// Настраиваемые пороги коридора «Соответствует» для индекса соответствия
+// (Фаза 4: src/talentCompliance.js — расчёт полностью детерминированный,
+// эти два числа только параметризуют пороги, ничего не считают сами).
+// Меняя их здесь, суперадмин сразу пересчитывает полосу оси X у всех уже
+// внесённых финальных баллов — getEffectiveBand() всегда читает текущие
+// пороги, а не то, что было сохранено на момент ввода баллов.
+function BandThresholdsEditor({ bandThresholds, onSave }) {
+  const initial = bandThresholds || DEFAULT_BAND_THRESHOLDS;
+  const [lower, setLower] = useState(String(initial.lower));
+  const [upper, setUpper] = useState(String(initial.upper));
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const next = bandThresholds || DEFAULT_BAND_THRESHOLDS;
+    setLower(String(next.lower));
+    setUpper(String(next.upper));
+  }, [bandThresholds]);
+
+  const handleSave = () => {
+    const next = { lower: Number(lower), upper: Number(upper) };
+    if (!isValidBandThresholds(next)) {
+      setSaved(false);
+      setError(
+        `Нижний порог должен быть меньше верхнего, оба — в пределах ${BAND_THRESHOLD_MIN}–${BAND_THRESHOLD_MAX}%.`
+      );
+      return;
+    }
+    setError('');
+    onSave(next);
+    setSaved(true);
+  };
+
+  return (
+    <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)', padding: '1.25rem', background: '#fff' }}>
+      <h4 style={{ marginTop: 0 }}>Пороги индекса соответствия</h4>
+      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+        Коридор «Соответствует»: от нижнего до верхнего порога. Ниже — не соответствует, выше — превосходит.
+      </p>
+
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 140px' }}>
+          <label>Нижний порог (%)</label>
+          <input
+            className="input"
+            type="number"
+            step="1"
+            min={BAND_THRESHOLD_MIN}
+            max={BAND_THRESHOLD_MAX}
+            style={inputSm}
+            value={lower}
+            onChange={(e) => { setLower(e.target.value); setSaved(false); }}
+          />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 140px' }}>
+          <label>Верхний порог (%)</label>
+          <input
+            className="input"
+            type="number"
+            step="1"
+            min={BAND_THRESHOLD_MIN}
+            max={BAND_THRESHOLD_MAX}
+            style={inputSm}
+            value={upper}
+            onChange={(e) => { setUpper(e.target.value); setSaved(false); }}
+          />
+        </div>
+      </div>
+
+      {error && <div className="error-message">{error}</div>}
+
+      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn btn-primary btn-sm" onClick={handleSave}>
+          Сохранить пороги
         </button>
         {saved && <span style={{ color: 'var(--color-success)', fontSize: '0.85rem', fontWeight: 500 }}>Сохранено</span>}
       </div>
