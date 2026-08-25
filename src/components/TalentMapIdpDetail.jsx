@@ -97,7 +97,7 @@ function IdpPlanView({ data }) {
 // квадранта 9-box, полос «Проблема»/«Резерв» или статуса пула (это видно
 // только суперадмину в под-шаге «Карта талантов», сюда не передаётся вовсе
 // — компонент физически не получает эти данные как props).
-function TalentMapIdpDetail({ evaluee, finalAssessment, existingPlan, onSavePlan }) {
+function TalentMapIdpDetail({ evaluee, currentUser, finalAssessment, existingPlan, onSavePlan }) {
   const reportRef = useRef(null);
   const [plan, setPlan] = useState(existingPlan || null);
   const [generating, setGenerating] = useState(false);
@@ -117,7 +117,9 @@ function TalentMapIdpDetail({ evaluee, finalAssessment, existingPlan, onSavePlan
     setGenerating(true);
     setError(null);
     try {
+      const idToken = await currentUser.getIdToken();
       const payload = {
+        idToken,
         employeeName: evaluee.fio,
         grade: evaluee.grade || '',
         targetScore: target,

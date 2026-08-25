@@ -74,10 +74,10 @@ function buildCompetencyRows(selfResponse, managerResponse) {
 
 // Отчёт по одной паре «оцениваемый + его руководитель» — самооценка против
 // оценки руководителя по всем 28 индикаторам, расхождения, AI-комментарий и
-// выгрузка в PDF. Данные читаются суперадмином напрямую из
-// talentMaps/{ownerUid}/responses/{taskId} (разрешено правилами Firestore,
-// см. firestore.rules) — никакого публичного доступа здесь нет.
-function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment }) {
+// выгрузка в PDF. Данные читаются напрямую из talentMaps/main/responses/{taskId}
+// (разрешено правилами Firestore тем, у кого есть доступ к карте — см.
+// firestore.rules) — никакого публичного доступа здесь нет.
+function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment }) {
   const reportRef = useRef(null);
   const [selfResponse, setSelfResponse] = useState(undefined); // undefined = ещё грузится
   const [managerResponse, setManagerResponse] = useState(undefined);
@@ -92,8 +92,8 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
     setManagerResponse(undefined);
     setLoadError(null);
     Promise.all([
-      getTalentResponse(ownerUid, pair.selfTask.id),
-      getTalentResponse(ownerUid, pair.managerTask.id),
+      getTalentResponse(pair.selfTask.id),
+      getTalentResponse(pair.managerTask.id),
     ])
       .then(([selfR, managerR]) => {
         if (cancelled) return;
@@ -105,7 +105,7 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
         if (!cancelled) setLoadError(err.message);
       });
     return () => { cancelled = true; };
-  }, [ownerUid, pair.selfTask.id, pair.managerTask.id]);
+  }, [pair.selfTask.id, pair.managerTask.id]);
 
   const bothLoaded = selfResponse !== undefined && managerResponse !== undefined;
   const dataMissing = bothLoaded && (!selfResponse || !managerResponse);
@@ -131,7 +131,9 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
     setAiGenerating(true);
     setAiError(null);
     try {
+      const idToken = await currentUser.getIdToken();
       const payload = {
+        idToken,
         evalueeName: pair.evaluee.fio,
         managerName: pair.manager.fio,
         competencies: compRows.map(c => ({

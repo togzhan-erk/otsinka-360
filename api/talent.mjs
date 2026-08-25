@@ -1,6 +1,5 @@
-import { getAdminAuth, getAdminDb, getSuperadminUid, FieldValue } from './_lib/firebaseAdmin.mjs';
+import { getAdminAuth, getAdminDb, SUPERADMIN_EMAIL, FieldValue } from './_lib/firebaseAdmin.mjs';
 import { TALENT_COMPETENCIES, getAllTalentIndicatorIds } from '../src/talentCompetencies.js';
-import { TALENT_MAP_ALLOWED_EMAILS } from '../src/talentAccess.js';
 
 // Карта талантов — единый роутер серверных функций модуля. Объединяет то,
 // что раньше было пятью отдельными файлами (api/talent-tasks.mjs,
@@ -13,21 +12,25 @@ import { TALENT_MAP_ALLOWED_EMAILS } from '../src/talentAccess.js';
 //   GET  /api/talent?action=tasks&token=...                — список задач по личному токену
 //   GET  /api/talent?action=task-form&token=...&taskId=...  — данные для одной задачи
 //   POST /api/talent {action:'save-task', token, taskId, scores, examples, finalize}
-//   POST /api/talent {action:'generate-pair-comment', evalueeName, managerName, competencies, discrepancies}
-//   POST /api/talent {action:'generate-idp', employeeName, grade, targetScore, competencies, weakest, strongest}
-//   POST /api/talent {action:'map-owner-uid', idToken}
+//   POST /api/talent {action:'generate-pair-comment', idToken, evalueeName, managerName, competencies, discrepancies}
+//   POST /api/talent {action:'generate-idp', idToken, employeeName, grade, targetScore, competencies, weakest, strongest}
 //
-// action=map-owner-uid — добавлено, чтобы карта талантов была ОДНИМ общим
-// документом (talentMaps/{ownerUid}) для всех email из
-// TALENT_MAP_ALLOWED_EMAILS, а не отдельным документом на каждого: doc id
-// всегда резолвится через getSuperadminUid() (фиксированный email-владелец
-// документа), а не берётся из uid вызывающего — иначе второй разрешённый
-// пользователь читал/писал бы в пустой talentMaps/{его-собственный-uid}.
+// Карта талантов живёт на ФИКСИРОВАННОМ документе talentMaps/main (не
+// привязанном ни к чьему Firebase uid — это общий инвентарь на компанию,
+// см. src/talentMap.js), поэтому здесь никакого резолвинга владельца
+// больше не нужно — только TALENT_MAP_DOC_ID.
+//
+// generate-pair-comment/generate-idp вызываются из уже вошедшей админки,
+// поэтому проверяют idToken + доступ (суперадмин ИЛИ email в allowedEmails
+// документа talentMaps/main — см. isTalentMapEmailAllowed ниже), в отличие
+// от tasks/task-form/save-task — те публичные, по личному токену
+// оценивающего, без логина вообще (как и раньше).
 //
 // api/rater-form.mjs, api/submit-feedback.mjs и api/generate-ipr.mjs (360)
 // НЕ трогались и остаются отдельными файлами — на них завязаны уже
 // разосланные ссылки-приглашения, менять их пути нельзя.
 
+const TALENT_MAP_DOC_ID = 'main';
 const NOT_FOUND_MESSAGE = 'Ссылка недействительна или устарела.';
 const ALL_INDICATOR_IDS = getAllTalentIndicatorIds();
 
@@ -47,6 +50,22 @@ function extractText(data) {
     .trim();
 }
 
+// Доступ к карте талантов = суперадмин ИЛИ email из allowedEmails на самом
+// документе talentMaps/main — то же правило, что firestore.rules
+// применяет к чтению/записи документа клиентским SDK, здесь нужно только
+// для двух AI-действий ниже (сами Firestore-чтения/записи карты идут через
+// клиентский SDK и уже защищены правилами; эти два действия ничего не
+// читают из Firestore и не обязаны бы проверять личность — но раз это
+// операции карты талантов, инициируемые из админки, а не публичные, имеет
+// смысл так же проверить инициатора).
+async function isTalentMapEmailAllowed(email, db) {
+  if (!email) return false;
+  if (email === SUPERADMIN_EMAIL) return true;
+  const mapSnap = await db.collection('talentMaps').doc(TALENT_MAP_DOC_ID).get();
+  const allowedEmails = mapSnap.exists ? (mapSnap.data().allowedEmails || []) : [];
+  return allowedEmails.includes(email);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // action=tasks (было api/talent-tasks.mjs, Фаза 2) — GET
 // ─────────────────────────────────────────────────────────────────────────
@@ -57,10 +76,9 @@ async function handleTasks(req, res) {
     return;
   }
 
-  let db, ownerUid;
+  let db;
   try {
     db = getAdminDb();
-    ownerUid = await getSuperadminUid();
   } catch (err) {
     console.error('[talent-tasks] Admin SDK init failed:', err.message);
     res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
@@ -68,7 +86,7 @@ async function handleTasks(req, res) {
   }
 
   try {
-    const mapSnap = await db.collection('talentMaps').doc(ownerUid).get();
+    const mapSnap = await db.collection('talentMaps').doc(TALENT_MAP_DOC_ID).get();
     if (!mapSnap.exists) {
       res.status(404).json({ error: NOT_FOUND_MESSAGE });
       return;
@@ -110,12 +128,12 @@ async function handleTasks(req, res) {
       if (assignments.length === 0) {
         console.error(
           '[talent-tasks] Employee found but assignments field is empty on talentMaps/%s — distribution was never computed/saved. employeeId=%s, token=%s',
-          ownerUid, employee.id, token
+          TALENT_MAP_DOC_ID, employee.id, token
         );
       } else {
         console.error(
           '[talent-tasks] Employee found but no assignment has raterId matching this employee — assignments may be stale (employee added/edited after the last save). talentMaps/%s, employeeId=%s, assignmentsCount=%d',
-          ownerUid, employee.id, assignments.length
+          TALENT_MAP_DOC_ID, employee.id, assignments.length
         );
       }
     }
@@ -137,10 +155,9 @@ async function handleTaskForm(req, res) {
     return;
   }
 
-  let db, ownerUid;
+  let db;
   try {
     db = getAdminDb();
-    ownerUid = await getSuperadminUid();
   } catch (err) {
     console.error('[talent-task-form] Admin SDK init failed:', err.message);
     res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
@@ -148,7 +165,7 @@ async function handleTaskForm(req, res) {
   }
 
   try {
-    const mapRef = db.collection('talentMaps').doc(ownerUid);
+    const mapRef = db.collection('talentMaps').doc(TALENT_MAP_DOC_ID);
     const mapSnap = await mapRef.get();
     if (!mapSnap.exists) {
       res.status(404).json({ error: NOT_FOUND_MESSAGE });
@@ -204,17 +221,16 @@ async function handleSaveTask(req, res, body) {
   }
   const safeExamples = (examples && typeof examples === 'object' && !Array.isArray(examples)) ? examples : {};
 
-  let db, ownerUid;
+  let db;
   try {
     db = getAdminDb();
-    ownerUid = await getSuperadminUid();
   } catch (err) {
     console.error('[talent-task-save] Admin SDK init failed:', err.message);
     res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
     return;
   }
 
-  const mapRef = db.collection('talentMaps').doc(ownerUid);
+  const mapRef = db.collection('talentMaps').doc(TALENT_MAP_DOC_ID);
   const responseRef = mapRef.collection('responses').doc(String(taskId));
 
   try {
@@ -284,7 +300,6 @@ async function handleSaveTask(req, res, body) {
           status: newStatus,
           updatedAt: FieldValue.serverTimestamp(),
           ...(finalize ? { completedAt: FieldValue.serverTimestamp() } : {}),
-          ownerUid,
         },
         { merge: true }
       );
@@ -380,10 +395,34 @@ ${formatDiscrepancies(discrepancies)}
 }
 
 async function handleGeneratePairComment(req, res, body) {
-  const { evalueeName, managerName, competencies, discrepancies } = body;
+  const { idToken, evalueeName, managerName, competencies, discrepancies } = body;
 
   if (!evalueeName || !managerName || !Array.isArray(competencies) || competencies.length === 0) {
     res.status(400).json({ error: 'Недостаточно данных для генерации комментария' });
+    return;
+  }
+
+  let adminAuth, db;
+  try {
+    adminAuth = getAdminAuth();
+    db = getAdminDb();
+  } catch (err) {
+    console.error('[generate-pair-comment] Admin SDK init failed:', err.message);
+    res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
+    return;
+  }
+
+  let decoded;
+  try {
+    decoded = await adminAuth.verifyIdToken(idToken);
+  } catch (err) {
+    console.error('[generate-pair-comment] idToken verification failed:', err.message);
+    res.status(401).json({ error: 'Не удалось подтвердить личность. Войдите заново.' });
+    return;
+  }
+
+  if (!(await isTalentMapEmailAllowed(decoded.email, db))) {
+    res.status(403).json({ error: 'Недостаточно прав для этого действия' });
     return;
   }
 
@@ -499,10 +538,34 @@ ${formatIdpCompetencies(competencies)}
 }
 
 async function handleGenerateIdp(req, res, body) {
-  const { employeeName, grade, targetScore, competencies, weakest, strongest } = body;
+  const { idToken, employeeName, grade, targetScore, competencies, weakest, strongest } = body;
 
   if (!employeeName || !Array.isArray(competencies) || competencies.length === 0) {
     res.status(400).json({ error: 'Недостаточно данных для генерации плана развития' });
+    return;
+  }
+
+  let adminAuth, db;
+  try {
+    adminAuth = getAdminAuth();
+    db = getAdminDb();
+  } catch (err) {
+    console.error('[generate-talent-idp] Admin SDK init failed:', err.message);
+    res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
+    return;
+  }
+
+  let decoded;
+  try {
+    decoded = await adminAuth.verifyIdToken(idToken);
+  } catch (err) {
+    console.error('[generate-talent-idp] idToken verification failed:', err.message);
+    res.status(401).json({ error: 'Не удалось подтвердить личность. Войдите заново.' });
+    return;
+  }
+
+  if (!(await isTalentMapEmailAllowed(decoded.email, db))) {
+    res.status(403).json({ error: 'Недостаточно прав для этого действия' });
     return;
   }
 
@@ -557,53 +620,6 @@ async function handleGenerateIdp(req, res, body) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// action=map-owner-uid — POST. Resolves the single shared talentMaps
-// document id for an authenticated, allowed caller. Unlike the AI actions
-// above (stateless proxies to Anthropic, no auth needed — same pattern as
-// api/generate-ipr.mjs), this one identifies the caller, so it verifies
-// idToken and checks their email against TALENT_MAP_ALLOWED_EMAILS before
-// returning anything.
-// ─────────────────────────────────────────────────────────────────────────
-async function handleMapOwnerUid(req, res, body) {
-  const { idToken } = body;
-  if (!idToken) {
-    res.status(400).json({ error: 'Не передан idToken' });
-    return;
-  }
-
-  let adminAuth;
-  try {
-    adminAuth = getAdminAuth();
-  } catch (err) {
-    console.error('[talent:map-owner-uid] Admin SDK init failed:', err.message);
-    res.status(500).json({ error: 'Сервис временно недоступен. Попробуйте позже.' });
-    return;
-  }
-
-  let decoded;
-  try {
-    decoded = await adminAuth.verifyIdToken(idToken);
-  } catch (err) {
-    console.error('[talent:map-owner-uid] idToken verification failed:', err.message);
-    res.status(401).json({ error: 'Не удалось подтвердить личность. Войдите заново.' });
-    return;
-  }
-
-  if (!TALENT_MAP_ALLOWED_EMAILS.includes(decoded.email)) {
-    res.status(403).json({ error: 'Недостаточно прав для этого действия' });
-    return;
-  }
-
-  try {
-    const ownerUid = await getSuperadminUid();
-    res.status(200).json({ ownerUid });
-  } catch (err) {
-    console.error('[talent:map-owner-uid] Failed to resolve owner uid:', err.message);
-    res.status(500).json({ error: 'Не удалось определить карту талантов.' });
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
 // Router
 // ─────────────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
@@ -641,10 +657,6 @@ export default async function handler(req, res) {
     }
     if (action === 'generate-idp') {
       await handleGenerateIdp(req, res, body);
-      return;
-    }
-    if (action === 'map-owner-uid') {
-      await handleMapOwnerUid(req, res, body);
       return;
     }
     res.status(400).json({ error: 'Неизвестное действие' });

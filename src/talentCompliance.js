@@ -3,7 +3,7 @@
 // (согласованными на интервью) баллами, таблицей целевых баллов по грейдам
 // и настраиваемыми порогами коридора «Соответствует» (оба редактируются
 // рядом друг с другом в TalentMapUploadStep.jsx, хранятся в
-// talentMaps/{ownerUid} полями gradeTargets и bandThresholds).
+// talentMaps/main полями gradeTargets и bandThresholds).
 
 import { TALENT_COMPETENCIES } from './talentCompetencies';
 

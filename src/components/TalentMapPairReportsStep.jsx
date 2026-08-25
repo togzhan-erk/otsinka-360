@@ -65,7 +65,7 @@ function ReadinessBadge({ ready }) {
 // Шаг «Отчёты по парам» — список плюс переключение на детальный отчёт
 // (TalentMapPairReport) внутри того же шага, без отдельной навигации в
 // TalentMapTab.jsx.
-function TalentMapPairReportsStep({ employees, assignments, ownerUid, pairComments, onSaveComment }) {
+function TalentMapPairReportsStep({ employees, assignments, currentUser, pairComments, onSaveComment }) {
   const [openPair, setOpenPair] = useState(null);
 
   const pairs = buildPairs(employees, assignments);
@@ -83,7 +83,7 @@ function TalentMapPairReportsStep({ employees, assignments, ownerUid, pairCommen
         </button>
         <TalentMapPairReport
           pair={openPair}
-          ownerUid={ownerUid}
+          currentUser={currentUser}
           existingComment={pairComments?.[openPair.evalueeId] || null}
           onSaveComment={(comment) => onSaveComment(openPair.evalueeId, comment)}
         />

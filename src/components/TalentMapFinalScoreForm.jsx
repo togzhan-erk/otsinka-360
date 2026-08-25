@@ -46,12 +46,12 @@ function MiniStat({ label, value, band }) {
 
 // Форма ввода согласованных (финальных) баллов для одного оцениваемого —
 // открывается из TalentMapFinalScoresStep.jsx. Предзаполняется оценкой
-// руководителя (talentMaps/{ownerUid}/responses/manager_...) как отправной
+// руководителя (talentMaps/main/responses/manager_...) как отправной
 // точкой при первом открытии; если баллы уже сохранялись, предзаполняется
 // именно ими, а не заново оценкой руководителя. Индекс соответствия и
 // полоса оси X считаются детерминированно в src/talentCompliance.js — AI
 // в этот расчёт не вовлечён.
-function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, bandThresholds, existingAssessment, onSave }) {
+function TalentMapFinalScoreForm({ pairInfo, gradeTargets, bandThresholds, existingAssessment, onSave }) {
   const thresholds = bandThresholds || DEFAULT_BAND_THRESHOLDS;
   const { evaluee, manager, managerTask } = pairInfo;
   const [managerResponse, setManagerResponse] = useState(undefined);
@@ -66,14 +66,14 @@ function TalentMapFinalScoreForm({ pairInfo, ownerUid, gradeTargets, bandThresho
   useEffect(() => {
     let cancelled = false;
     setManagerResponse(undefined);
-    getTalentResponse(ownerUid, managerTask.id)
+    getTalentResponse(managerTask.id)
       .then(r => { if (!cancelled) setManagerResponse(r); })
       .catch(err => {
         console.error('[TalentMapFinalScoreForm] Failed to load manager response:', err);
         if (!cancelled) setManagerResponse(null);
       });
     return () => { cancelled = true; };
-  }, [ownerUid, managerTask.id]);
+  }, [managerTask.id]);
 
   useEffect(() => {
     if (managerResponse === undefined || initializedRef.current) return;

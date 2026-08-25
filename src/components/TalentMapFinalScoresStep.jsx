@@ -65,7 +65,7 @@ const tdStyle = { padding: '0.6rem 0.75rem', verticalAlign: 'middle', fontSize: 
 // балл/ИС%/полоса X, и переключение на форму ввода для одного сотрудника.
 // Расчёт (src/talentCompliance.js) полностью детерминированный — это не
 // AI-функция.
-function TalentMapFinalScoresStep({ employees, assignments, gradeTargets, bandThresholds, ownerUid, finalAssessments, onSaveFinalAssessment }) {
+function TalentMapFinalScoresStep({ employees, assignments, gradeTargets, bandThresholds, finalAssessments, onSaveFinalAssessment }) {
   const [openPair, setOpenPair] = useState(null);
 
   const pairs = buildPairs(employees, assignments);
@@ -83,7 +83,6 @@ function TalentMapFinalScoresStep({ employees, assignments, gradeTargets, bandTh
         </button>
         <TalentMapFinalScoreForm
           pairInfo={openPair}
-          ownerUid={ownerUid}
           gradeTargets={gradeTargets}
           bandThresholds={bandThresholds}
           existingAssessment={finalAssessments?.[openPair.evalueeId] || null}

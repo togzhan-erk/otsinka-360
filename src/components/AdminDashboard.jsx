@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   getArchivedCycles, getCycleFeedback, resumeCycle, duplicateCycle, deleteCycleCompletely,
 } from '../cycles';
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
-import { isTalentMapAllowed } from '../talentAccess';
+import { TALENT_MAP_DOC_ID } from '../talentMap';
 import { LogoIcon } from './Logo';
 import { listClients, createClient, setClientAccess, resetClientPassword, deleteClientAccount } from '../clients';
 import EmployeesStep from './EmployeesStep';
@@ -97,6 +97,28 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const [liveRoleAssignments, setLiveRoleAssignments] = useState(null);
   const [liveCycleName, setLiveCycleName] = useState(null);
   const [liveCycleCreatedAt, setLiveCycleCreatedAt] = useState(null);
+  // null = ещё проверяется, true/false = решено. Карта талантов — общий
+  // документ talentMaps/main, доступ к которому определяется полем
+  // allowedEmails на нём самом (плюс суперадмин, у которого доступ всегда,
+  // без проверки поля) — см. firestore.rules. Клиент не может заранее
+  // знать этот список без чтения документа, а прочитать документ может
+  // только тот, у кого уже есть доступ — поэтому видимость пункта
+  // навигации решается тем же способом, что и сам доступ: пробуем прочитать
+  // документ и по результату (успех/отказ) показываем или скрываем вкладку.
+  const [talentMapAccess, setTalentMapAccess] = useState(null);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (isSuperadmin(currentUser)) {
+      setTalentMapAccess(true);
+      return;
+    }
+    let cancelled = false;
+    getDoc(doc(db, 'talentMaps', TALENT_MAP_DOC_ID))
+      .then(() => { if (!cancelled) setTalentMapAccess(true); })
+      .catch(() => { if (!cancelled) setTalentMapAccess(false); });
+    return () => { cancelled = true; };
+  }, [currentUser]);
 
   useEffect(() => {
     if (!cycleId) {
@@ -281,7 +303,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   const cycleYear = liveCycleCreatedAt?.toDate ? liveCycleCreatedAt.toDate().getFullYear() : new Date().getFullYear();
   const hasEmployees = employees.length > 0;
   const isSuperadminUser = isSuperadmin(currentUser);
-  const isTalentMapUser = isTalentMapAllowed(currentUser);
+  const isTalentMapUser = talentMapAccess === true;
   // Only a real company name counts here — the email fallback that used to
   // live on this variable is never shown as a title anywhere anymore (it's
   // still available separately, in the navbar, next to "Выйти").
@@ -599,10 +621,11 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
           />
         )}
 
-        {/* ── Карта талантов (доступ по TALENT_MAP_ALLOWED_EMAILS, не только
-             суперадмину) — отдельный инструмент, своя структура данных и
-             своё хранение (src/talentMap.js), не связан с опросами 360
-             выше на этой странице. ── */}
+        {/* ── Карта талантов (доступ = суперадмин ИЛИ email в allowedEmails
+             на самом документе talentMaps/main, управляется в самом
+             модуле — TalentMapAccessPanel.jsx) — отдельный инструмент,
+             своя структура данных и своё хранение (src/talentMap.js), не
+             связан с опросами 360 выше на этой странице. ── */}
         {activeTab === 'talentMap' && isTalentMapUser && (
           <TalentMapTab currentUser={currentUser} />
         )}

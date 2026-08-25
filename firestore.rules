@@ -72,30 +72,34 @@ rules_version = '2';
 //     left over from before cycles existed) is intentionally left
 //     unreachable from the client — nothing reads or writes them anymore.
 //
-//   - talentMaps/{mapId} — Карта талантов module (src/talentMap.js). ONE
-//     shared document for every email listed in
-//     src/talentAccess.js:TALENT_MAP_ALLOWED_EMAILS — several people work
-//     on the same talent map together, not one document per person — so
-//     access is gated purely on request.auth.token.email being in that
-//     list, NOT on request.auth.uid matching the doc id. (The doc id is a
-//     fixed uid, resolved server-side via getSuperadminUid() in
-//     api/_lib/firebaseAdmin.mjs regardless of which allowed person is
-//     signed in — see api/talent.mjs's map-owner-uid action — so every
-//     allowed user's client ends up pointed at the same document.) This is
-//     separate from clients/{clientId} above, which stays superadmin-only
-//     (elctogzhan@gmail.com) and is untouched by the talent-map list.
-//     employees/gradeTargets/assignments/etc. all live as fields on this
-//     single document (same array-fields-on-one-doc shape as
-//     cycles/{cycleId}). Entirely separate from cycles/* above; nothing in
-//     this module reads or writes cycles/*, and nothing in the 360 flow
+//   - talentMaps/main — Карта талантов module (src/talentMap.js). ONE
+//     FIXED shared document — a single company-wide inventory, not one per
+//     person, not tied to anyone's Firebase uid (unlike cycles/{cycleId}).
+//     Access is entirely data-driven: allowed if the caller's email is
+//     the superadmin's (elctogzhan@gmail.com, unconditional, cannot be
+//     revoked) OR is listed in the document's own allowedEmails array
+//     field (managed from the UI — TalentMapAccessPanel.jsx — with no code
+//     changes needed to add/remove someone). A non-superadmin write may
+//     never change allowedEmails itself — only the superadmin can grant or
+//     revoke access — enforced below by comparing
+//     request.resource.data.allowedEmails against resource.data.allowedEmails
+//     on every non-superadmin update. This is entirely separate from
+//     clients/{clientId} above, which stays superadmin-only
+//     (elctogzhan@gmail.com) and is untouched by the talent-map list — a
+//     talent-map-allowed user gets no access to clients/* at all.
+//     employees/gradeTargets/assignments/allowedEmails/etc. all live as
+//     fields on this single document (same array-fields-on-one-doc shape
+//     as cycles/{cycleId}). Entirely separate from cycles/* above; nothing
+//     in this module reads or writes cycles/*, and nothing in the 360 flow
 //     reads or writes talentMaps/*.
 //     └ responses/{taskId} — Фаза 2: one document per assessment task
 //       (self or manager), written exclusively by api/talent.mjs
 //       (action=save-task) via the Admin SDK (which bypasses these rules
 //       entirely, same as api/submit-feedback.mjs does for
 //       cycles/{cycleId}/feedback) — there is no client write path here at
-//       all. Read is allowed for the same talent-map email list, kept for
-//       a future results view; nothing reads it yet.
+//       all. Read inherits the same superadmin-or-allowedEmails check from
+//       the parent document, kept for a future results view; nothing
+//       reads it yet.
 //
 // There is no manual "pick anyone and evaluate them" rater entry — the only
 // way to reach the evaluation form is a personal invite link
@@ -168,24 +172,57 @@ service cloud.firestore {
     }
 
     // Карта талантов — entirely separate module/collection from cycles/*
-    // above (src/talentMap.js). ONE shared document, readable/writable by
-    // any email in this list (keep in sync with
-    // src/talentAccess.js:TALENT_MAP_ALLOWED_EMAILS) — deliberately NOT
-    // gated on request.auth.uid matching the doc id, since the doc id is a
-    // fixed uid shared by everyone on this list, not the caller's own uid.
-    // clients/* above is a separate, superadmin-only list and is not
-    // affected by this one.
+    // above (src/talentMap.js). ONE fixed document (talentMaps/main, not
+    // one per person) — access is superadmin OR listed in the document's
+    // OWN allowedEmails field, managed from the UI (TalentMapAccessPanel.jsx)
+    // with no hardcoded email list and no code changes needed. resource
+    // may be null here (get() on a not-yet-created doc, e.g. before the
+    // one-time migration/first save has run) — resource.data.get(...) is
+    // guarded with `resource != null` throughout so that case denies
+    // cleanly for non-superadmins instead of erroring, while the
+    // superadmin branch (needed to create/migrate the doc) never touches
+    // resource.data at all. clients/* above is a separate, superadmin-only
+    // list and is not affected by this one — a talent-map-allowed
+    // non-superadmin gets zero access to clients/*.
     match /talentMaps/{mapId} {
-      allow read, write: if request.auth != null
-                          && request.auth.token.email in
-                             ['elctogzhan@gmail.com', 'maksim_a@eng-services.kz'];
+      allow read: if request.auth != null
+                  && (
+                    request.auth.token.email == 'elctogzhan@gmail.com'
+                    || (resource != null
+                        && request.auth.token.email in resource.data.get('allowedEmails', []))
+                  );
+
+      // Only the superadmin may create the shared document from scratch
+      // (e.g. the one-time migration in src/talentMap.js).
+      allow create: if request.auth != null
+                    && request.auth.token.email == 'elctogzhan@gmail.com';
+
+      // Any allowed user may update the document's data, but only the
+      // superadmin may change WHO is allowed — a non-superadmin update
+      // must leave allowedEmails exactly as it already was.
+      allow update: if request.auth != null
+                    && (
+                      request.auth.token.email == 'elctogzhan@gmail.com'
+                      || (
+                        request.auth.token.email in resource.data.get('allowedEmails', [])
+                        && request.resource.data.get('allowedEmails', []) == resource.data.get('allowedEmails', [])
+                      )
+                    );
+
+      allow delete: if request.auth != null
+                    && request.auth.token.email == 'elctogzhan@gmail.com';
 
       // Individual assessment answers (Фаза 2) — see the model note above.
-      // No client write path exists; only the Admin SDK writes here.
+      // No client write path exists; only the Admin SDK writes here. Read
+      // inherits the same superadmin-or-allowedEmails check via get() on
+      // the parent document, keyed only by the mapId path segment.
       match /responses/{taskId} {
         allow read: if request.auth != null
-                    && request.auth.token.email in
-                       ['elctogzhan@gmail.com', 'maksim_a@eng-services.kz'];
+                    && (
+                      request.auth.token.email == 'elctogzhan@gmail.com'
+                      || request.auth.token.email in
+                         get(/databases/$(database)/documents/talentMaps/$(mapId)).data.get('allowedEmails', [])
+                    );
         allow write: if false;
       }
     }

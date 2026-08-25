@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { isSuperadmin } from '../auth';
 import {
-  saveTalentMapData, savePairComment, saveFinalAssessment, saveYAxisAssessment, saveTalentPoolOverride,
-  saveIdpPlan, resolveTalentMapOwnerUid,
+  TALENT_MAP_DOC_ID, saveTalentMapData, savePairComment, saveFinalAssessment, saveYAxisAssessment,
+  saveTalentPoolOverride, saveIdpPlan, migrateTalentMapToSharedDocIfNeeded,
 } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { DEFAULT_BAND_THRESHOLDS, isValidBandThresholds } from '../talentCompliance';
@@ -16,8 +17,9 @@ import TalentMapPairReportsStep from './TalentMapPairReportsStep';
 import TalentMapFinalScoresStep from './TalentMapFinalScoresStep';
 import TalentMapNineBoxStep from './TalentMapNineBoxStep';
 import TalentMapIdpStep from './TalentMapIdpStep';
+import TalentMapAccessPanel from './TalentMapAccessPanel';
 
-const STEPS = [
+const BASE_STEPS = [
   { key: 'upload', number: 1, title: 'Загрузка' },
   { key: 'distribution', number: 2, title: 'Распределение' },
   { key: 'progress', number: 3, title: 'Прохождение' },
@@ -27,26 +29,24 @@ const STEPS = [
   { key: 'idp', number: 7, title: 'План развития' },
 ];
 
-// Карта талантов — отдельный инструмент, доступный email из
-// src/talentAccess.js: TALENT_MAP_ALLOWED_EMAILS (проверка делается в
-// AdminDashboard.jsx перед рендером этого компонента). Своя коллекция
-// Firestore (src/talentMap.js: talentMaps/{ownerUid}), не пересекается с
-// cycles/* опросов 360 — этот компонент никогда не импортирует
-// src/cycles.js и не трогает данные 360.
+// Карта талантов — отдельный инструмент. Доступ = суперадмин ИЛИ email из
+// allowedEmails на самом документе карты (проверяется в AdminDashboard.jsx
+// перед рендером этого компонента — там же решается, показывать ли пункт
+// навигации). Своя коллекция Firestore (src/talentMap.js:
+// talentMaps/main — ОДИН фиксированный документ на всю компанию, не
+// привязанный к чьему-либо uid), не пересекается с cycles/* опросов 360 —
+// этот компонент никогда не импортирует src/cycles.js и не трогает
+// данные 360.
 //
-// ownerUid — ОБЩИЙ для всех разрешённых пользователей id документа,
-// резолвится через resolveTalentMapOwnerUid() (сервер всегда возвращает
-// один и тот же uid, привязанный к фиксированному email-владельцу, а не
-// к тому, кто сейчас вошёл) — иначе каждый разрешённый пользователь читал
-// бы/писал в свой собственный, отдельный документ вместо общей карты.
-//
-// Живая подписка (onSnapshot), а не разовое чтение: статус задач оценки
-// (assignments[].status) меняется на сервере по мере того, как оценивающие
-// заполняют форму по своим личным ссылкам (api/talent.mjs, action=save-task),
-// и экран «Распределение» должен отражать это без ручного обновления страницы.
+// Живая подписка (onSnapshot) на фиксированный путь — не нужно ничего
+// резолвить асинхронно (раньше документ жил на talentMaps/{ownerUid} и
+// требовал отдельного запроса, чтобы узнать чей uid; теперь путь
+// известен заранее). Статус задач оценки (assignments[].status) меняется
+// на сервере по мере того, как оценивающие заполняют форму по своим
+// личным ссылкам (api/talent.mjs, action=save-task), и экран
+// «Распределение» должен отражать это без ручного обновления страницы.
 function TalentMapTab({ currentUser }) {
-  const [ownerUid, setOwnerUid] = useState(null);
-  const [ownerError, setOwnerError] = useState(null);
+  const isSuperadminUser = isSuperadmin(currentUser);
   const [step, setStep] = useState('upload');
   const [employees, setEmployees] = useState([]);
   const [gradeTargets, setGradeTargets] = useState(DEFAULT_GRADE_TARGETS);
@@ -58,30 +58,26 @@ function TalentMapTab({ currentUser }) {
   const [quadrants, setQuadrants] = useState({});
   const [talentPoolOverrides, setTalentPoolOverrides] = useState({});
   const [idpPlans, setIdpPlans] = useState({});
+  const [allowedEmails, setAllowedEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Одноразовая миграция talentMaps/{uid суперадмина} → talentMaps/main —
+  // осмысленна только когда её запускает сам суперадмин (только под его
+  // uid легаси-документ вообще мог существовать); для остальных
+  // разрешённых пользователей это без эффекта (см. комментарий в
+  // src/talentMap.js).
   useEffect(() => {
-    if (!currentUser) return;
-    let cancelled = false;
-    currentUser.getIdToken()
-      .then((idToken) => resolveTalentMapOwnerUid(idToken))
-      .then((uid) => { if (!cancelled) setOwnerUid(uid); })
-      .catch((err) => {
-        console.error('[TalentMapTab] Failed to resolve talent map owner:', err);
-        if (!cancelled) {
-          setOwnerError(err.message);
-          setLoading(false);
-        }
-      });
-    return () => { cancelled = true; };
-  }, [currentUser]);
+    if (!currentUser || !isSuperadminUser) return;
+    migrateTalentMapToSharedDocIfNeeded(currentUser.uid).catch((err) => {
+      console.error('[TalentMapTab] Migration attempt failed:', err);
+    });
+  }, [currentUser, isSuperadminUser]);
 
   useEffect(() => {
-    if (!ownerUid) return;
     setLoading(true);
     const unsubscribe = onSnapshot(
-      doc(db, 'talentMaps', ownerUid),
+      doc(db, 'talentMaps', TALENT_MAP_DOC_ID),
       (snap) => {
         const data = snap.exists() ? snap.data() : null;
         setEmployees(data?.employees || []);
@@ -94,6 +90,7 @@ function TalentMapTab({ currentUser }) {
         setQuadrants(data?.quadrants || {});
         setTalentPoolOverrides(data?.talentPoolOverrides || {});
         setIdpPlans(data?.idpPlans || {});
+        setAllowedEmails(data?.allowedEmails || []);
         setLoading(false);
         setError(null);
       },
@@ -104,7 +101,7 @@ function TalentMapTab({ currentUser }) {
       }
     );
     return unsubscribe;
-  }, [ownerUid]);
+  }, []);
 
   // Каждое сохранение списка сотрудников:
   //  1) гарантирует, что у всех есть персональный токен (src/talentTokens.js)
@@ -113,9 +110,9 @@ function TalentMapTab({ currentUser }) {
   //  2) пересчитывает и сохраняет assignments В ТОМ ЖЕ Firestore-вызове.
   // Раньше assignments сохранялись только когда админ отдельно заходил на
   // шаг «Распределение» и жал «Сохранить распределение» — до этого клика
-  // поле assignments в talentMaps/{uid} оставалось пустым, и личная ссылка
+  // поле assignments в talentMaps/main оставалось пустым, и личная ссылка
   // сотрудника показывала «Задач пока нет» даже при реально существующих
-  // задачах (api/talent-tasks.mjs читает assignments из этого же документа).
+  // задачах (api/talent.mjs читает assignments из этого же документа).
   // Теперь сотрудники и назначения всегда сохраняются согласованно — одним
   // и тем же вызовом saveTalentMapData, сразу после загрузки Excel.
   // computeMergedTalentAssignments (не «с нуля») сохраняет status уже
@@ -124,7 +121,7 @@ function TalentMapTab({ currentUser }) {
     const { employees: next } = ensureEmployeeTokens(rawNext);
     const mergedAssignments = computeMergedTalentAssignments(next, assignments);
     try {
-      await saveTalentMapData(ownerUid, { employees: next, assignments: mergedAssignments });
+      await saveTalentMapData({ employees: next, assignments: mergedAssignments });
     } catch (err) {
       console.error('[TalentMapTab] Failed to save employees:', err);
       alert('Ошибка сохранения сотрудников: ' + err.message);
@@ -133,7 +130,7 @@ function TalentMapTab({ currentUser }) {
 
   const persistGradeTargets = async (next) => {
     try {
-      await saveTalentMapData(ownerUid, { gradeTargets: next });
+      await saveTalentMapData({ gradeTargets: next });
     } catch (err) {
       console.error('[TalentMapTab] Failed to save grade targets:', err);
       alert('Ошибка сохранения таблицы грейдов: ' + err.message);
@@ -141,20 +138,20 @@ function TalentMapTab({ currentUser }) {
   };
 
   const persistAssignments = async (nextAssignments) => {
-    await saveTalentMapData(ownerUid, { assignments: nextAssignments });
+    await saveTalentMapData({ assignments: nextAssignments });
   };
 
   const persistPairComment = async (evalueeId, comment) => {
-    await savePairComment(ownerUid, evalueeId, comment);
+    await savePairComment(evalueeId, comment);
   };
 
   const persistFinalAssessment = async (evalueeId, assessment) => {
-    await saveFinalAssessment(ownerUid, evalueeId, assessment);
+    await saveFinalAssessment(evalueeId, assessment);
   };
 
   const persistBandThresholds = async (next) => {
     try {
-      await saveTalentMapData(ownerUid, { bandThresholds: next });
+      await saveTalentMapData({ bandThresholds: next });
     } catch (err) {
       console.error('[TalentMapTab] Failed to save band thresholds:', err);
       alert('Ошибка сохранения порогов: ' + err.message);
@@ -163,7 +160,7 @@ function TalentMapTab({ currentUser }) {
 
   const persistYAxisAssessment = async (evalueeId, data) => {
     try {
-      await saveYAxisAssessment(ownerUid, evalueeId, data);
+      await saveYAxisAssessment(evalueeId, data);
     } catch (err) {
       console.error('[TalentMapTab] Failed to save Y-axis assessment:', err);
       alert('Ошибка сохранения оси Y: ' + err.message);
@@ -172,7 +169,7 @@ function TalentMapTab({ currentUser }) {
 
   const persistQuadrants = async (next) => {
     try {
-      await saveTalentMapData(ownerUid, { quadrants: next });
+      await saveTalentMapData({ quadrants: next });
     } catch (err) {
       console.error('[TalentMapTab] Failed to save quadrants:', err);
       alert('Ошибка сохранения настройки ячеек: ' + err.message);
@@ -181,7 +178,7 @@ function TalentMapTab({ currentUser }) {
 
   const persistPoolOverride = async (poolKey, override) => {
     try {
-      await saveTalentPoolOverride(ownerUid, poolKey, override);
+      await saveTalentPoolOverride(poolKey, override);
     } catch (err) {
       console.error('[TalentMapTab] Failed to save talent pool override:', err);
       alert('Ошибка сохранения пула: ' + err.message);
@@ -189,8 +186,19 @@ function TalentMapTab({ currentUser }) {
   };
 
   const persistIdpPlan = async (evalueeId, plan) => {
-    await saveIdpPlan(ownerUid, evalueeId, plan);
+    await saveIdpPlan(evalueeId, plan);
   };
+
+  // Только суперадмин может менять allowedEmails — firestore.rules это
+  // обеспечивают на уровне записи, а видимость самой панели (и пункта
+  // «Доступ» в навигации ниже) гейтится isSuperadminUser здесь же.
+  const persistAllowedEmails = async (next) => {
+    await saveTalentMapData({ allowedEmails: next });
+  };
+
+  const steps = isSuperadminUser
+    ? [...BASE_STEPS, { key: 'access', number: 8, title: 'Доступ' }]
+    : BASE_STEPS;
 
   return (
     <div>
@@ -200,7 +208,7 @@ function TalentMapTab({ currentUser }) {
       </p>
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-        {STEPS.map(s => (
+        {steps.map(s => (
           <button
             key={s.key}
             onClick={() => setStep(s.key)}
@@ -216,11 +224,10 @@ function TalentMapTab({ currentUser }) {
         ))}
       </div>
 
-      {ownerError && <div className="error-message">Ошибка доступа к карте талантов: {ownerError}</div>}
-      {!ownerError && loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
-      {!ownerError && error && <div className="error-message">Ошибка загрузки карты талантов: {error}</div>}
+      {loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
+      {error && <div className="error-message">Ошибка загрузки карты талантов: {error}</div>}
 
-      {!ownerError && !loading && !error && step === 'upload' && (
+      {!loading && !error && step === 'upload' && (
         <TalentMapUploadStep
           employees={employees}
           gradeTargets={gradeTargets}
@@ -231,7 +238,7 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!ownerError && !loading && !error && step === 'distribution' && (
+      {!loading && !error && step === 'distribution' && (
         <TalentMapDistributionStep
           employees={employees}
           assignments={assignments}
@@ -239,36 +246,35 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!ownerError && !loading && !error && step === 'progress' && (
+      {!loading && !error && step === 'progress' && (
         <TalentMapProgressStep
           employees={employees}
           assignments={assignments}
         />
       )}
 
-      {!ownerError && !loading && !error && step === 'pairReports' && (
+      {!loading && !error && step === 'pairReports' && (
         <TalentMapPairReportsStep
           employees={employees}
           assignments={assignments}
-          ownerUid={ownerUid}
+          currentUser={currentUser}
           pairComments={pairComments}
           onSaveComment={persistPairComment}
         />
       )}
 
-      {!ownerError && !loading && !error && step === 'finalScores' && (
+      {!loading && !error && step === 'finalScores' && (
         <TalentMapFinalScoresStep
           employees={employees}
           assignments={assignments}
           gradeTargets={gradeTargets}
           bandThresholds={bandThresholds}
-          ownerUid={ownerUid}
           finalAssessments={finalAssessments}
           onSaveFinalAssessment={persistFinalAssessment}
         />
       )}
 
-      {!ownerError && !loading && !error && step === 'nineBox' && (
+      {!loading && !error && step === 'nineBox' && (
         <TalentMapNineBoxStep
           employees={employees}
           assignments={assignments}
@@ -283,13 +289,21 @@ function TalentMapTab({ currentUser }) {
         />
       )}
 
-      {!ownerError && !loading && !error && step === 'idp' && (
+      {!loading && !error && step === 'idp' && (
         <TalentMapIdpStep
           employees={employees}
           assignments={assignments}
+          currentUser={currentUser}
           finalAssessments={finalAssessments}
           idpPlans={idpPlans}
           onSavePlan={persistIdpPlan}
+        />
+      )}
+
+      {!loading && !error && step === 'access' && isSuperadminUser && (
+        <TalentMapAccessPanel
+          allowedEmails={allowedEmails}
+          onSave={persistAllowedEmails}
         />
       )}
     </div>

@@ -47,7 +47,7 @@ export function quadrantKey(yBand, xBand) {
 
 // Значения по умолчанию для всех 9 ячеек — ровно как заданы в тексте
 // задачи Фазы 5a. Редактируются суперадмином (TalentMapQuadrantEditor.jsx)
-// и хранятся как overrides в talentMaps/{ownerUid}.quadrants; getQuadrant()
+// и хранятся как overrides в talentMaps/main.quadrants; getQuadrant()
 // ниже сливает override поверх дефолта.
 export const DEFAULT_QUADRANTS = {
   [quadrantKey(TALENT_BAND_EXCEEDS, TALENT_BAND_EXCEEDS)]: {
@@ -106,7 +106,7 @@ export const DEFAULT_QUADRANTS = {
   },
 };
 
-// quadrants — overrides из talentMaps/{ownerUid}.quadrants (может быть {}
+// quadrants — overrides из talentMaps/main.quadrants (может быть {}
 // или частично не содержать ключ) — там, где override нет, берётся дефолт.
 export function getQuadrant(quadrants, yBand, xBand) {
   const key = quadrantKey(yBand, xBand);
