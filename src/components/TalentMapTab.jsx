@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { saveTalentMapData } from '../talentMap';
+import { saveTalentMapData, savePairComment } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { ensureEmployeeTokens } from '../talentTokens';
 import { computeMergedTalentAssignments } from '../talentAssignments';
 import TalentMapUploadStep from './TalentMapUploadStep';
 import TalentMapDistributionStep from './TalentMapDistributionStep';
+import TalentMapProgressStep from './TalentMapProgressStep';
+import TalentMapPairReportsStep from './TalentMapPairReportsStep';
 
 const STEPS = [
   { key: 'upload', number: 1, title: 'Загрузка' },
   { key: 'distribution', number: 2, title: 'Распределение' },
+  { key: 'progress', number: 3, title: 'Прохождение' },
+  { key: 'pairReports', number: 4, title: 'Отчёты по парам' },
 ];
 
 // Карта талантов — отдельный инструмент, доступный только суперадмину
@@ -29,6 +33,7 @@ function TalentMapTab({ currentUser }) {
   const [employees, setEmployees] = useState([]);
   const [gradeTargets, setGradeTargets] = useState(DEFAULT_GRADE_TARGETS);
   const [assignments, setAssignments] = useState([]);
+  const [pairComments, setPairComments] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -42,6 +47,7 @@ function TalentMapTab({ currentUser }) {
         setEmployees(data?.employees || []);
         setGradeTargets(data?.gradeTargets?.length ? data.gradeTargets : DEFAULT_GRADE_TARGETS);
         setAssignments(data?.assignments || []);
+        setPairComments(data?.pairComments || {});
         setLoading(false);
         setError(null);
       },
@@ -92,6 +98,10 @@ function TalentMapTab({ currentUser }) {
     await saveTalentMapData(ownerUid, { assignments: nextAssignments });
   };
 
+  const persistPairComment = async (evalueeId, comment) => {
+    await savePairComment(ownerUid, evalueeId, comment);
+  };
+
   return (
     <div>
       <h3 style={{ margin: 0 }}>Карта талантов</h3>
@@ -133,6 +143,23 @@ function TalentMapTab({ currentUser }) {
           employees={employees}
           assignments={assignments}
           onSaveAssignments={persistAssignments}
+        />
+      )}
+
+      {!loading && !error && step === 'progress' && (
+        <TalentMapProgressStep
+          employees={employees}
+          assignments={assignments}
+        />
+      )}
+
+      {!loading && !error && step === 'pairReports' && (
+        <TalentMapPairReportsStep
+          employees={employees}
+          assignments={assignments}
+          ownerUid={ownerUid}
+          pairComments={pairComments}
+          onSaveComment={persistPairComment}
         />
       )}
     </div>
