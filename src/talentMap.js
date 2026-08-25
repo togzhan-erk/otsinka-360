@@ -99,3 +99,15 @@ export async function saveTalentPoolOverride(ownerUid, poolKey, override) {
     [`talentPoolOverrides.${poolKey}`]: override,
   });
 }
+
+// AI-план развития (IDP, Фаза 5b) по финальным баллам сотрудника — та же
+// точечная запись по evalueeId, тот же приём {text} для сырого фолбэка,
+// что и у savePairComment (api/generate-talent-idp.mjs возвращает либо
+// структурированный {strengths, growthAreas, plan}, либо сырую строку).
+export async function saveIdpPlan(ownerUid, evalueeId, plan) {
+  if (!ownerUid || !evalueeId) throw new Error('ownerUid и evalueeId обязательны');
+  const payload = typeof plan === 'string' ? { text: plan } : { ...plan };
+  await updateDoc(talentMapRef(ownerUid), {
+    [`idpPlans.${evalueeId}`]: { ...payload, generatedAt: serverTimestamp() },
+  });
+}

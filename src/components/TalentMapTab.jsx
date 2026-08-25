@@ -3,6 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   saveTalentMapData, savePairComment, saveFinalAssessment, saveYAxisAssessment, saveTalentPoolOverride,
+  saveIdpPlan,
 } from '../talentMap';
 import { DEFAULT_GRADE_TARGETS } from '../talentGrades';
 import { DEFAULT_BAND_THRESHOLDS, isValidBandThresholds } from '../talentCompliance';
@@ -14,6 +15,7 @@ import TalentMapProgressStep from './TalentMapProgressStep';
 import TalentMapPairReportsStep from './TalentMapPairReportsStep';
 import TalentMapFinalScoresStep from './TalentMapFinalScoresStep';
 import TalentMapNineBoxStep from './TalentMapNineBoxStep';
+import TalentMapIdpStep from './TalentMapIdpStep';
 
 const STEPS = [
   { key: 'upload', number: 1, title: 'Загрузка' },
@@ -22,6 +24,7 @@ const STEPS = [
   { key: 'pairReports', number: 4, title: 'Отчёты по парам' },
   { key: 'finalScores', number: 5, title: 'Согласованные баллы' },
   { key: 'nineBox', number: 6, title: 'Карта талантов' },
+  { key: 'idp', number: 7, title: 'План развития' },
 ];
 
 // Карта талантов — отдельный инструмент, доступный только суперадмину
@@ -46,6 +49,7 @@ function TalentMapTab({ currentUser }) {
   const [yAxisAssessments, setYAxisAssessments] = useState({});
   const [quadrants, setQuadrants] = useState({});
   const [talentPoolOverrides, setTalentPoolOverrides] = useState({});
+  const [idpPlans, setIdpPlans] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -65,6 +69,7 @@ function TalentMapTab({ currentUser }) {
         setYAxisAssessments(data?.yAxisAssessments || {});
         setQuadrants(data?.quadrants || {});
         setTalentPoolOverrides(data?.talentPoolOverrides || {});
+        setIdpPlans(data?.idpPlans || {});
         setLoading(false);
         setError(null);
       },
@@ -159,6 +164,10 @@ function TalentMapTab({ currentUser }) {
     }
   };
 
+  const persistIdpPlan = async (evalueeId, plan) => {
+    await saveIdpPlan(ownerUid, evalueeId, plan);
+  };
+
   return (
     <div>
       <h3 style={{ margin: 0 }}>Карта талантов</h3>
@@ -246,6 +255,16 @@ function TalentMapTab({ currentUser }) {
           onSaveYAxis={persistYAxisAssessment}
           onSaveQuadrants={persistQuadrants}
           onSavePoolOverride={persistPoolOverride}
+        />
+      )}
+
+      {!loading && !error && step === 'idp' && (
+        <TalentMapIdpStep
+          employees={employees}
+          assignments={assignments}
+          finalAssessments={finalAssessments}
+          idpPlans={idpPlans}
+          onSavePlan={persistIdpPlan}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Settings2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Settings2, Download } from 'lucide-react';
 import { TALENT_ASSIGNMENT_SELF, TALENT_ASSIGNMENT_MANAGER } from '../talentAssignments';
 import { getEffectiveBand, TALENT_BAND_LABELS } from '../talentCompliance';
 import {
@@ -71,6 +71,7 @@ function TalentMapNineBoxStep({
   onSaveYAxis, onSaveQuadrants, onSavePoolOverride,
 }) {
   const [showQuadrantEditor, setShowQuadrantEditor] = useState(false);
+  const companyPdfRef = useRef(null);
 
   const pairs = buildPairs(employees, assignments);
 
@@ -82,6 +83,48 @@ function TalentMapNineBoxStep({
 
   const placed = placement.filter(p => p.xBand && p.yBand);
   const unplaced = placement.filter(p => !p.xBand || !p.yBand);
+
+  // Конфиденциальный PDF для HR/комитета (Фаза 5b) — снимает ровно то, что
+  // обёрнуто в companyPdfRef (сетка + распределение + пулы), пропуская
+  // редактируемые/служебные блоки внутри него через report-no-pdf (тот же
+  // приём, что EmployeeReport.jsx и другие отчёты карты талантов уже
+  // используют). Не путать с индивидуальным планом развития
+  // (TalentMapIdpDetail.jsx) — там наоборот, ярлыков карты нет вовсе.
+  const handleDownloadCompanyPdf = async () => {
+    const { default: html2canvas } = await import('html2canvas');
+    const { default: jsPDF } = await import('jspdf');
+
+    const el = companyPdfRef.current;
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#FAF7F1',
+      logging: false,
+      ignoreElements: (element) => element.classList?.contains('report-no-pdf'),
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW;
+    const imgH = (canvas.height * imgW) / canvas.width;
+
+    let remaining = imgH;
+    let yOffset = 0;
+
+    pdf.addImage(imgData, 'PNG', 0, yOffset, imgW, imgH);
+    remaining -= pageH;
+
+    while (remaining > 0) {
+      yOffset -= pageH;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, yOffset, imgW, imgH);
+      remaining -= pageH;
+    }
+
+    pdf.save('Карта_талантов_компания.pdf');
+  };
 
   if (pairs.length === 0) {
     return (
@@ -110,76 +153,89 @@ function TalentMapNineBoxStep({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.9rem' }}>
         <h4 style={{ margin: 0 }}>Карта 9-box</h4>
-        <button className="btn btn-secondary btn-sm" onClick={() => setShowQuadrantEditor(v => !v)}>
+        <button className="btn btn-secondary btn-sm report-no-pdf" onClick={() => setShowQuadrantEditor(v => !v)}>
           <Settings2 size={14} strokeWidth={2} />
           {showQuadrantEditor ? 'Скрыть настройку ячеек' : 'Настроить ячейки'}
         </button>
       </div>
 
-      <div style={{ overflowX: 'auto', marginBottom: '0.75rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '150px repeat(3, minmax(200px, 1fr))', gap: '0.6rem', minWidth: '760px' }}>
-          <div />
-          {X_AXIS_ORDER.map(xBand => (
-            <div key={xBand} style={{ textAlign: 'center', fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
-              {TALENT_BAND_LABELS[xBand]}
-            </div>
-          ))}
-          {Y_AXIS_ORDER.map(yBand => (
-            <React.Fragment key={yBand}>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
-                {TALENT_BAND_LABELS[yBand]}
+      {/* Конфиденциальный PDF (только для HR/суперадмина) снимает именно этот
+          блок — сетка + распределение + пулы. «Настроить ячейки», сама
+          панель редактора и «Не размещены» помечены report-no-pdf и в
+          снимок не попадают — это служебный UI, а не содержимое карты. */}
+      <div ref={companyPdfRef}>
+        <div style={{ overflowX: 'auto', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '150px repeat(3, minmax(200px, 1fr))', gap: '0.6rem', minWidth: '760px' }}>
+            <div />
+            {X_AXIS_ORDER.map(xBand => (
+              <div key={xBand} style={{ textAlign: 'center', fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                {TALENT_BAND_LABELS[xBand]}
               </div>
-              {X_AXIS_ORDER.map(xBand => {
-                const quadrant = getQuadrant(quadrants, yBand, xBand);
-                const cellEmployees = placed.filter(p => p.yBand === yBand && p.xBand === xBand);
-                return <CellCard key={quadrantKey(yBand, xBand)} quadrant={quadrant} employees={cellEmployees} />;
-              })}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-      <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
-        Столбцы — ось X (индекс соответствия), строки — ось Y (KPI).
-      </p>
-
-      {showQuadrantEditor && (
-        <div style={{ marginBottom: '2rem' }}>
-          <TalentMapQuadrantEditor quadrants={quadrants} onSave={onSaveQuadrants} />
-        </div>
-      )}
-
-      {unplaced.length > 0 && (
-        <div style={{
-          marginBottom: '2.5rem', padding: '1rem 1.25rem', border: '1px dashed var(--color-border)',
-          borderRadius: 'var(--radius-card)', background: 'var(--color-surface-tint)',
-        }}>
-          <h5 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Не размещены ({unplaced.length})</h5>
-          <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
-            Не хватает полосы X (Фаза 4 — финальные баллы) или Y (KPI выше).
-          </p>
-          <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
-            {unplaced.map(p => (
-              <li key={p.evalueeId}>
-                {p.evaluee.fio}
-                {' — '}
-                {!p.xBand && !p.yBand ? 'нет ни X, ни Y' : !p.xBand ? 'нет X' : 'нет Y'}
-              </li>
             ))}
-          </ul>
+            {Y_AXIS_ORDER.map(yBand => (
+              <React.Fragment key={yBand}>
+                <div style={{ display: 'flex', alignItems: 'center', fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                  {TALENT_BAND_LABELS[yBand]}
+                </div>
+                {X_AXIS_ORDER.map(xBand => {
+                  const quadrant = getQuadrant(quadrants, yBand, xBand);
+                  const cellEmployees = placed.filter(p => p.yBand === yBand && p.xBand === xBand);
+                  return <CellCard key={quadrantKey(yBand, xBand)} quadrant={quadrant} employees={cellEmployees} />;
+                })}
+              </React.Fragment>
+            ))}
+          </div>
         </div>
-      )}
+        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
+          Столбцы — ось X (индекс соответствия), строки — ось Y (KPI).
+        </p>
 
-      <div style={{ marginBottom: '2.5rem' }}>
-        <TalentMapTalentPools
-          placement={placement}
-          quadrants={quadrants}
-          talentPoolOverrides={talentPoolOverrides}
-          employees={employees}
-          onSaveOverride={onSavePoolOverride}
-        />
+        {showQuadrantEditor && (
+          <div className="report-no-pdf" style={{ marginBottom: '2rem' }}>
+            <TalentMapQuadrantEditor quadrants={quadrants} onSave={onSaveQuadrants} />
+          </div>
+        )}
+
+        {unplaced.length > 0 && (
+          <div className="report-no-pdf" style={{
+            marginBottom: '2.5rem', padding: '1rem 1.25rem', border: '1px dashed var(--color-border)',
+            borderRadius: 'var(--radius-card)', background: 'var(--color-surface-tint)',
+          }}>
+            <h5 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Не размещены ({unplaced.length})</h5>
+            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+              Не хватает полосы X (Фаза 4 — финальные баллы) или Y (KPI выше).
+            </p>
+            <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
+              {unplaced.map(p => (
+                <li key={p.evalueeId}>
+                  {p.evaluee.fio}
+                  {' — '}
+                  {!p.xBand && !p.yBand ? 'нет ни X, ни Y' : !p.xBand ? 'нет X' : 'нет Y'}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div style={{ marginBottom: '2.5rem' }}>
+          <TalentMapTalentPools
+            placement={placement}
+            quadrants={quadrants}
+            talentPoolOverrides={talentPoolOverrides}
+            employees={employees}
+            onSaveOverride={onSavePoolOverride}
+          />
+        </div>
+
+        <TalentMapDistributionCheck placement={placement} quadrants={quadrants} />
       </div>
 
-      <TalentMapDistributionCheck placement={placement} quadrants={quadrants} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+        <button className="btn btn-accent" onClick={handleDownloadCompanyPdf}>
+          <Download size={16} strokeWidth={2} />
+          Скачать карту талантов (PDF)
+        </button>
+      </div>
     </div>
   );
 }
