@@ -10,8 +10,8 @@ const TYPE_LABELS = {
 
 const STATUS_LABELS = { not_started: 'Не начата', in_progress: 'В процессе', completed: 'Завершена' };
 const STATUS_STYLE = {
-  not_started: { color: 'var(--color-text-muted)', bg: 'var(--color-surface-tint)' },
-  in_progress: { color: 'var(--color-accent-hover)', bg: 'rgba(226, 145, 71, 0.14)' },
+  not_started: { color: '#B42318', bg: '#FCE8E6' },
+  in_progress: { color: '#8A5A22', bg: 'rgba(226, 145, 71, 0.14)' },
   completed: { color: 'var(--color-success)', bg: 'rgba(91, 140, 110, 0.14)' },
 };
 

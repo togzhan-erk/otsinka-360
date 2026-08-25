@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, RefreshCw, Download, AlertTriangle } from 'lucide-react';
+import { Sparkles, RefreshCw, Download } from 'lucide-react';
 import { getTalentResponse } from '../talentMap';
 import { TALENT_COMPETENCIES } from '../talentCompetencies';
 
@@ -28,11 +28,19 @@ function fmt(n) {
   return n !== null && n !== undefined ? n.toFixed(2).replace('.', ',') : '—';
 }
 
-// AI-комментарий сохраняется либо как структурированный объект
-// {agreements, disagreements, interviewFocus}, либо — если модель не
-// вернула валидный JSON — как {text: '...'} с сырым текстом (тот же приём,
-// что EmployeeReport.jsx уже использует для ИПР).
+// AI-комментарий сохраняется как структурированный объект
+// {summary, questions[]}, либо — если модель не вернула валидный JSON —
+// как {text: '...'} с сырым текстом (тот же приём, что EmployeeReport.jsx
+// уже использует для ИПР). {agreements, disagreements, interviewFocus} —
+// старая форма, в которой AI-комментарии сохранялись до этого изменения;
+// уже сгенерированные и сохранённые в базе комментарии по-прежнему должны
+// отрисовываться, а не пропадать, поэтому оставлен как fallback-раскладка.
 function isStructuredComment(data) {
+  return !!data && typeof data === 'object' &&
+    (typeof data.summary === 'string' || Array.isArray(data.questions));
+}
+
+function isLegacyStructuredComment(data) {
   return !!data && typeof data === 'object' &&
     (typeof data.agreements === 'string' || typeof data.disagreements === 'string' || typeof data.interviewFocus === 'string');
 }
@@ -304,26 +312,10 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
                 </div>
               ))}
 
-              {/* Основные расхождения */}
-              <SectionTitle>Основные расхождения</SectionTitle>
-              {discrepancies.length === 0 ? (
-                <p style={{ color: BRAND.muted, fontSize: '0.9rem' }}>
-                  Существенных расхождений (разница ≥ {DISCREPANCY_THRESHOLD} балла) не найдено — самооценка и оценка руководителя в целом совпадают.
-                </p>
-              ) : (
-                discrepancies.map(d => (
-                  <div key={d.id} style={{
-                    display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.75rem 1rem',
-                    background: '#FCEBD9', border: `1px solid ${BRAND.accent}55`, borderRadius: 10, marginBottom: '0.5rem',
-                  }}>
-                    <AlertTriangle size={16} strokeWidth={2} style={{ color: BRAND.accent, flexShrink: 0, marginTop: '0.1rem' }} />
-                    <div style={{ fontSize: '0.88rem', lineHeight: 1.5 }}>
-                      <strong>{d.competency} → {d.name}</strong>: самооценка {d.selfScore}, руководитель {d.managerScore}
-                      {' — '}{d.higher === 'self' ? 'самооценка выше' : 'оценка руководителя выше'} на {d.diff}.
-                    </div>
-                  </div>
-                ))
-              )}
+              {/* Отдельный список расхождений намеренно убран — он дублировал
+                  подсветку строк с разницей >= DISCREPANCY_THRESHOLD в
+                  таблицах выше. discrepancies (посчитан ниже) по-прежнему
+                  нужен как есть — это данные, отправляемые в AI-комментарий. */}
 
               {/* AI-комментарий */}
               <div style={{ marginTop: '2rem', padding: '1.5rem', borderRadius: 'var(--radius-card)', background: BRAND.primary, color: '#fff' }}>
@@ -344,6 +336,17 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
 
                 {comment && isStructuredComment(comment) && (
                   <div>
+                    {comment.summary && (
+                      <CommentBlock title="Сходства и расхождения" text={comment.summary} />
+                    )}
+                    {Array.isArray(comment.questions) && comment.questions.length > 0 && (
+                      <QuestionsBlock title="Вопросы для интервью" questions={comment.questions} />
+                    )}
+                  </div>
+                )}
+
+                {comment && !isStructuredComment(comment) && isLegacyStructuredComment(comment) && (
+                  <div>
                     {comment.agreements && (
                       <CommentBlock title="Совпадает" text={comment.agreements} />
                     )}
@@ -356,7 +359,7 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
                   </div>
                 )}
 
-                {comment && !isStructuredComment(comment) && comment.text && (
+                {comment && !isStructuredComment(comment) && !isLegacyStructuredComment(comment) && comment.text && (
                   <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
                     {comment.text}
                   </p>
@@ -408,17 +411,6 @@ const thStyle = {
 };
 const tdStyle = { padding: '0.5rem 0.65rem', fontSize: '0.85rem', verticalAlign: 'top', borderBottom: '1px solid var(--color-border)' };
 
-function SectionTitle({ children }) {
-  return (
-    <h3 style={{
-      fontFamily: "'Fraunces', Georgia, serif", color: BRAND.primary, fontSize: '1.1rem',
-      margin: '2rem 0 1rem', paddingBottom: '0.4rem', borderBottom: '2px solid var(--color-border)',
-    }}>
-      {children}
-    </h3>
-  );
-}
-
 function CommentBlock({ title, text }) {
   return (
     <div style={{ marginBottom: '1.1rem' }}>
@@ -428,6 +420,21 @@ function CommentBlock({ title, text }) {
       <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
         {text}
       </p>
+    </div>
+  );
+}
+
+function QuestionsBlock({ title, questions }) {
+  return (
+    <div style={{ marginBottom: '1.1rem' }}>
+      <div style={{ fontFamily: "'Fraunces', Georgia, serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+        {title}
+      </div>
+      <ol style={{ margin: 0, paddingLeft: '1.15rem', color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.7 }}>
+        {questions.map((q, i) => (
+          <li key={i} style={{ marginBottom: '0.4rem' }}>{q}</li>
+        ))}
+      </ol>
     </div>
   );
 }
