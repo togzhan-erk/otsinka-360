@@ -130,10 +130,12 @@ function App() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Карта талантов — Фаза 2: resolves entirely through api/talent-tasks,
-  // api/talent-task-form and api/talent-task-save (Admin SDK), exactly like
-  // the 360 rater flow above resolves through api/rater-form +
-  // api/submit-feedback. No Firestore access from this client at all.
+  // Карта талантов — Фаза 2: resolves entirely through api/talent (a single
+  // router — see api/talent.mjs — covering ?action=tasks/task-form and
+  // POST action=save-task, merged from three separate files to stay under
+  // Vercel Hobby's 12-function limit), exactly like the 360 rater flow
+  // above resolves through api/rater-form + api/submit-feedback. No
+  // Firestore access from this client at all.
   useEffect(() => {
     if (!TALENT_TOKEN) return;
     window.history.replaceState({}, '', '/');
@@ -141,7 +143,7 @@ function App() {
       setUserRole('talentRater');
       setStage('talentLoading');
       try {
-        const res = await fetch(`/api/talent-tasks?token=${encodeURIComponent(TALENT_TOKEN)}`);
+        const res = await fetch(`/api/talent?action=tasks&token=${encodeURIComponent(TALENT_TOKEN)}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           console.warn('[App] Talent tasks lookup failed:', data?.error);
@@ -200,7 +202,7 @@ function App() {
     setStage('talentLoading');
     try {
       const res = await fetch(
-        `/api/talent-task-form?token=${encodeURIComponent(TALENT_TOKEN)}&taskId=${encodeURIComponent(taskId)}`
+        `/api/talent?action=task-form&token=${encodeURIComponent(TALENT_TOKEN)}&taskId=${encodeURIComponent(taskId)}`
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -223,7 +225,7 @@ function App() {
     setTalentCurrentTask(null);
     setStage('talentLoading');
     try {
-      const res = await fetch(`/api/talent-tasks?token=${encodeURIComponent(TALENT_TOKEN)}`);
+      const res = await fetch(`/api/talent?action=tasks&token=${encodeURIComponent(TALENT_TOKEN)}`);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setTalentRaterName(data.raterName || '');

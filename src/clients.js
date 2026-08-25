@@ -18,25 +18,31 @@ async function postJson(path, body) {
   return data;
 }
 
+// Every action below goes through the same merged router, api/clients.mjs
+// (create-client/delete-client/list-clients/reset-client-password/
+// set-client-access used to be five separate serverless functions — merged
+// into one file to stay under Vercel Hobby's 12-function limit; the action
+// field is how each operation is selected server-side).
+
 // Returns clients enriched with activity stats (cyclesCount, employeesCount)
 // and current access status — computed server-side via the Admin SDK.
 export async function listClients({ idToken }) {
-  const data = await postJson('/api/list-clients', { idToken });
+  const data = await postJson('/api/clients', { action: 'list', idToken });
   return data.clients || [];
 }
 
 export async function createClient({ idToken, email, password, companyName }) {
-  return postJson('/api/create-client', { idToken, email, password, companyName });
+  return postJson('/api/clients', { action: 'create', idToken, email, password, companyName });
 }
 
 export async function setClientAccess({ idToken, uid, active }) {
-  return postJson('/api/set-client-access', { idToken, uid, active });
+  return postJson('/api/clients', { action: 'set-access', idToken, uid, active });
 }
 
 export async function resetClientPassword({ idToken, uid, newPassword }) {
-  return postJson('/api/reset-client-password', { idToken, uid, newPassword });
+  return postJson('/api/clients', { action: 'reset-password', idToken, uid, newPassword });
 }
 
 export async function deleteClientAccount({ idToken, uid }) {
-  return postJson('/api/delete-client', { idToken, uid });
+  return postJson('/api/clients', { action: 'delete', idToken, uid });
 }

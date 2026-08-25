@@ -133,10 +133,10 @@ function TalentMapIdpDetail({ evaluee, finalAssessment, existingPlan, onSavePlan
         strongest,
       };
 
-      const res = await fetch('/api/generate-talent-idp', {
+      const res = await fetch('/api/talent', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ action: 'generate-idp', ...payload }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

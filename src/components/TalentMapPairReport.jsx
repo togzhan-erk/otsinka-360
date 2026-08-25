@@ -148,10 +148,10 @@ function TalentMapPairReport({ pair, ownerUid, existingComment, onSaveComment })
         })),
       };
 
-      const res = await fetch('/api/generate-pair-comment', {
+      const res = await fetch('/api/talent', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ action: 'generate-pair-comment', ...payload }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

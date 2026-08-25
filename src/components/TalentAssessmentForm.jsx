@@ -70,10 +70,10 @@ function TalentAssessmentForm({ token, taskId, evalueeName, type, competencies, 
   const saveDraft = useCallback(async (nextScores, nextExamples) => {
     setSaveState('saving');
     try {
-      const res = await fetch('/api/talent-task-save', {
+      const res = await fetch('/api/talent', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token, taskId, scores: nextScores, examples: nextExamples, finalize: false }),
+        body: JSON.stringify({ action: 'save-task', token, taskId, scores: nextScores, examples: nextExamples, finalize: false }),
       });
       if (!res.ok) throw new Error('save failed');
       setSaveState('saved');
@@ -131,10 +131,10 @@ function TalentAssessmentForm({ token, taskId, evalueeName, type, competencies, 
     setSubmitting(true);
     setSubmitError('');
     try {
-      const res = await fetch('/api/talent-task-save', {
+      const res = await fetch('/api/talent', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token, taskId, scores, examples, finalize: true }),
+        body: JSON.stringify({ action: 'save-task', token, taskId, scores, examples, finalize: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
