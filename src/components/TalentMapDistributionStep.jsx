@@ -5,28 +5,32 @@ import {
   computeMergedTalentAssignments, TALENT_ASSIGNMENT_SELF, TALENT_ASSIGNMENT_MANAGER,
 } from '../talentAssignments';
 import { buildTalentLink } from '../talentLinks';
+import { SUPERADMIN_EMAIL } from '../auth';
 
-// Тот же EmailJS-аккаунт (Service/Template/Public Key), что и приглашения
-// 360 (см. AdminDashboard.jsx handleSendInvite) — переменные env те же,
-// письмо отправляется напрямую с клиента, без новых serverless-функций
-// (лимит Vercel — см. api/). link/to_email/to_name — те же имена
-// переменных, что уже использует текущий шаблон приглашений 360, поэтому
-// они точно будут подставлены. subject/intro_text — ДОПОЛНИТЕЛЬНЫЕ
-// переменные под текст карты талантов; если в шаблоне EmailJS для них нет
-// плейсхолдеров {{subject}}/{{intro_text}}, письмо всё равно уйдёт (с
-// правильной ссылкой и именем), но текст будет тем же, что и в текущем
-// шаблоне приглашений 360 — сам шаблон этот код не меняет.
+// Тот же EmailJS-аккаунт, что и приглашения 360 (тот же Service ID и
+// Public Key — process.env.REACT_APP_EMAILJS_SERVICE_ID/PUBLIC_KEY), но
+// СВОЙ, отдельный шаблон, чтобы правки текста карты талантов не задевали
+// прежний шаблон 360 (process.env.REACT_APP_EMAILJS_TEMPLATE_ID, см.
+// AdminDashboard.jsx handleSendInvite) — эти два шаблона теперь полностью
+// независимы. Письмо отправляется напрямую с клиента, без новых
+// serverless-функций (лимит Vercel — см. api/).
+const TALENT_MAP_EMAILJS_TEMPLATE_ID = 'template_k0715ts';
+
+// Переменные ровно те, что ждёт template_k0715ts: to_email — получатель,
+// link — его персональная ссылка на задачи оценки в карте талантов, name —
+// отображаемое имя отправителя писем, email — reply-to (обе — фиксированная
+// личность «HR-службы», а не e-mail конкретного администратора, нажавшего
+// «Отправить»).
 async function sendTalentInvite(rater, link) {
   const templateParams = {
-    link,
     to_email: rater.email,
-    to_name: rater.fio,
-    subject: 'Оценка компетенций — Карта талантов',
-    intro_text: 'Вас пригласили пройти оценку компетенций. Перейдите по ссылке, чтобы оценить себя (и, если есть, ваших подчинённых).',
+    name: 'HR-служба',
+    email: SUPERADMIN_EMAIL,
+    link,
   };
   await emailjs.send(
     process.env.REACT_APP_EMAILJS_SERVICE_ID,
-    process.env.REACT_APP_EMAILJS_TEMPLATE_ID,
+    TALENT_MAP_EMAILJS_TEMPLATE_ID,
     templateParams,
     process.env.REACT_APP_EMAILJS_PUBLIC_KEY
   );
