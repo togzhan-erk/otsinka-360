@@ -1,9 +1,36 @@
 import React, { useMemo, useState } from 'react';
 import { ClipboardList, Save, Copy, Check } from 'lucide-react';
+import emailjs from '@emailjs/browser';
 import {
   computeMergedTalentAssignments, TALENT_ASSIGNMENT_SELF, TALENT_ASSIGNMENT_MANAGER,
 } from '../talentAssignments';
 import { buildTalentLink } from '../talentLinks';
+
+// Тот же EmailJS-аккаунт (Service/Template/Public Key), что и приглашения
+// 360 (см. AdminDashboard.jsx handleSendInvite) — переменные env те же,
+// письмо отправляется напрямую с клиента, без новых serverless-функций
+// (лимит Vercel — см. api/). link/to_email/to_name — те же имена
+// переменных, что уже использует текущий шаблон приглашений 360, поэтому
+// они точно будут подставлены. subject/intro_text — ДОПОЛНИТЕЛЬНЫЕ
+// переменные под текст карты талантов; если в шаблоне EmailJS для них нет
+// плейсхолдеров {{subject}}/{{intro_text}}, письмо всё равно уйдёт (с
+// правильной ссылкой и именем), но текст будет тем же, что и в текущем
+// шаблоне приглашений 360 — сам шаблон этот код не меняет.
+async function sendTalentInvite(rater, link) {
+  const templateParams = {
+    link,
+    to_email: rater.email,
+    to_name: rater.fio,
+    subject: 'Оценка компетенций — Карта талантов',
+    intro_text: 'Вас пригласили пройти оценку компетенций. Перейдите по ссылке, чтобы оценить себя (и, если есть, ваших подчинённых).',
+  };
+  await emailjs.send(
+    process.env.REACT_APP_EMAILJS_SERVICE_ID,
+    process.env.REACT_APP_EMAILJS_TEMPLATE_ID,
+    templateParams,
+    process.env.REACT_APP_EMAILJS_PUBLIC_KEY
+  );
+}
 
 const TYPE_LABELS = {
   [TALENT_ASSIGNMENT_SELF]: 'Самооценка',
@@ -68,12 +95,15 @@ function TalentMapDistributionStep({ employees, assignments, onSaveAssignments }
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+  const [sendStatus, setSendStatus] = useState({}); // raterId -> 'sending' | 'sent' | 'error'
+  const [sendAllSummary, setSendAllSummary] = useState(null); // { sending, sent, failed, total }
 
   const merged = useMemo(
     () => computeMergedTalentAssignments(employees, assignments),
     [employees, assignments]
   );
   const getEmployee = (id) => employees.find(e => e.id === id);
+  const raterIds = useMemo(() => [...new Set(merged.map(a => a.raterId))], [merged]);
 
   const selfCount = merged.filter(a => a.type === TALENT_ASSIGNMENT_SELF).length;
   const managerCount = merged.filter(a => a.type === TALENT_ASSIGNMENT_MANAGER).length;
@@ -103,6 +133,48 @@ function TalentMapDistributionStep({ employees, assignments, onSaveAssignments }
     }
   };
 
+  const handleSendOne = async (rater, link) => {
+    if (!rater.email || !link) return;
+    setSendStatus(prev => ({ ...prev, [rater.id]: 'sending' }));
+    try {
+      await sendTalentInvite(rater, link);
+      setSendStatus(prev => ({ ...prev, [rater.id]: 'sent' }));
+    } catch (err) {
+      console.error('[TalentMapDistributionStep] EmailJS error:', err);
+      setSendStatus(prev => ({ ...prev, [rater.id]: 'error' }));
+    }
+  };
+
+  // Рассылает всем сотрудникам, у кого есть email и хотя бы одна задача
+  // оценки (то есть присутствуют в raterIds) — остальные (без email или
+  // без токена) молча пропускаются и не входят в итоговый счётчик.
+  const handleSendAll = async () => {
+    const targets = raterIds
+      .map(getEmployee)
+      .filter(r => r && r.email && r.token);
+
+    let sent = 0;
+    let failed = 0;
+    setSendAllSummary({ sending: true, sent, failed, total: targets.length });
+
+    for (const rater of targets) {
+      const link = buildTalentLink(rater.token);
+      setSendStatus(prev => ({ ...prev, [rater.id]: 'sending' }));
+      try {
+        await sendTalentInvite(rater, link);
+        setSendStatus(prev => ({ ...prev, [rater.id]: 'sent' }));
+        sent += 1;
+      } catch (err) {
+        console.error('[TalentMapDistributionStep] EmailJS error (send all):', err);
+        setSendStatus(prev => ({ ...prev, [rater.id]: 'error' }));
+        failed += 1;
+      }
+      setSendAllSummary({ sending: true, sent, failed, total: targets.length });
+    }
+
+    setSendAllSummary({ sending: false, sent, failed, total: targets.length });
+  };
+
   if (employees.length === 0) {
     return (
       <p style={{ color: 'var(--color-text-muted)' }}>
@@ -111,7 +183,7 @@ function TalentMapDistributionStep({ employees, assignments, onSaveAssignments }
     );
   }
 
-  const raterIds = [...new Set(merged.map(a => a.raterId))];
+  const sendableCount = raterIds.map(getEmployee).filter(r => r && r.email && r.token).length;
 
   return (
     <div>
@@ -126,14 +198,30 @@ function TalentMapDistributionStep({ employees, assignments, onSaveAssignments }
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
           Сохраните распределение, чтобы личные ссылки заработали, и статусы задач начали обновляться.
         </p>
-        <button className="btn btn-secondary btn-sm" onClick={handleSave} disabled={saving}>
-          <Save size={15} strokeWidth={2} />
-          {saving ? 'Сохранение...' : 'Сохранить распределение'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleSave} disabled={saving}>
+            <Save size={15} strokeWidth={2} />
+            {saving ? 'Сохранение...' : 'Сохранить распределение'}
+          </button>
+          {sendableCount > 0 && (
+            <button className="btn btn-primary btn-sm" onClick={handleSendAll} disabled={!!sendAllSummary?.sending}>
+              {sendAllSummary?.sending
+                ? `Рассылка... (${sendAllSummary.sent + sendAllSummary.failed}/${sendAllSummary.total})`
+                : `Разослать всем (${sendableCount})`}
+            </button>
+          )}
+        </div>
       </div>
 
       {saved && <div className="info-message">Распределение сохранено.</div>}
       {saveError && <div className="error-message">Ошибка сохранения: {saveError}</div>}
+
+      {sendAllSummary && !sendAllSummary.sending && (
+        <div className={sendAllSummary.failed > 0 ? 'error-message' : 'info-message'}>
+          Рассылка завершена: успешно отправлено — {sendAllSummary.sent}, с ошибкой — {sendAllSummary.failed}
+          {' '}(всего адресатов: {sendAllSummary.total}).
+        </div>
+      )}
 
       <div style={{ overflowX: 'auto', marginBottom: '2.5rem' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -184,10 +272,28 @@ function TalentMapDistributionStep({ employees, assignments, onSaveAssignments }
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
                 <strong>{rater.fio}</strong>
                 {link ? (
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleCopy(raterId, link)}>
-                    {copiedId === raterId ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={2} />}
-                    {copiedId === raterId ? 'Скопировано' : 'Скопировать ссылку'}
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleCopy(raterId, link)}>
+                      {copiedId === raterId ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={2} />}
+                      {copiedId === raterId ? 'Скопировано' : 'Скопировать ссылку'}
+                    </button>
+                    {rater.email ? (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handleSendOne(rater, link)}
+                        disabled={sendStatus[raterId] === 'sending'}
+                      >
+                        {sendStatus[raterId] === 'sending' ? 'Отправка...'
+                          : sendStatus[raterId] === 'sent' ? 'Отправлено ✓'
+                          : sendStatus[raterId] === 'error' ? 'Ошибка, повторить'
+                          : 'Отправить'}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }} title="У сотрудника не указан email в загруженном файле">
+                        Нет email
+                      </span>
+                    )}
+                  </div>
                 ) : (
                   <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Сохраните сотрудников на шаге «Загрузка», чтобы получить ссылку</span>
                 )}
