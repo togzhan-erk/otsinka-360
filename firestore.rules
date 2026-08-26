@@ -83,7 +83,12 @@ rules_version = '2';
 //     never change allowedEmails itself — only the superadmin can grant or
 //     revoke access — enforced below by comparing
 //     request.resource.data.allowedEmails against resource.data.allowedEmails
-//     on every non-superadmin update. This is entirely separate from
+//     on every non-superadmin update. Each superadmin-or-allowedEmails check
+//     below is written as two separate `allow read`/`allow update` statements
+//     (OR'd together by Firestore itself) rather than one condition with
+//     `||`/`&&` nested inside parens — the single-condition form is what the
+//     Firebase console's rules parser actually rejected at publish time.
+//     This is entirely separate from
 //     clients/{clientId} above, which stays superadmin-only
 //     (elctogzhan@gmail.com) and is untouched by the talent-map list — a
 //     talent-map-allowed user gets no access to clients/* at all.
@@ -185,12 +190,20 @@ service cloud.firestore {
     // list and is not affected by this one — a talent-map-allowed
     // non-superadmin gets zero access to clients/*.
     match /talentMaps/{mapId} {
+      // Split into two independent `allow read` statements (rather than one
+      // condition with `||` and nested `&&` inside parens) — Firestore's
+      // rules parser rejected the single-condition form (a relational `in`
+      // combined with `&&` inside a paren group nested under `||` produced
+      // "Unexpected '&&'"/"Unexpected ')'" at publish time). Multiple
+      // `allow read` statements on the same match block are OR'd together
+      // by Firestore itself, so this is exactly equivalent to the original
+      // superadmin-OR-allowedEmails condition, just spelled out flatly.
       allow read: if request.auth != null
-                  && (
-                    request.auth.token.email == 'elctogzhan@gmail.com'
-                    || (resource != null
-                        && request.auth.token.email in resource.data.get('allowedEmails', []))
-                  );
+                  && request.auth.token.email == 'elctogzhan@gmail.com';
+
+      allow read: if request.auth != null
+                  && resource != null
+                  && request.auth.token.email in resource.data.get('allowedEmails', []);
 
       // Only the superadmin may create the shared document from scratch
       // (e.g. the one-time migration in src/talentMap.js).
@@ -199,15 +212,15 @@ service cloud.firestore {
 
       // Any allowed user may update the document's data, but only the
       // superadmin may change WHO is allowed — a non-superadmin update
-      // must leave allowedEmails exactly as it already was.
+      // must leave allowedEmails exactly as it already was. Split into two
+      // `allow update` statements for the same parser reason as `allow
+      // read` above.
       allow update: if request.auth != null
-                    && (
-                      request.auth.token.email == 'elctogzhan@gmail.com'
-                      || (
-                        request.auth.token.email in resource.data.get('allowedEmails', [])
-                        && request.resource.data.get('allowedEmails', []) == resource.data.get('allowedEmails', [])
-                      )
-                    );
+                    && request.auth.token.email == 'elctogzhan@gmail.com';
+
+      allow update: if request.auth != null
+                    && request.auth.token.email in resource.data.get('allowedEmails', [])
+                    && request.resource.data.get('allowedEmails', []) == resource.data.get('allowedEmails', []);
 
       allow delete: if request.auth != null
                     && request.auth.token.email == 'elctogzhan@gmail.com';
@@ -215,14 +228,16 @@ service cloud.firestore {
       // Individual assessment answers (Фаза 2) — see the model note above.
       // No client write path exists; only the Admin SDK writes here. Read
       // inherits the same superadmin-or-allowedEmails check via get() on
-      // the parent document, keyed only by the mapId path segment.
+      // the parent document, keyed only by the mapId path segment. Again
+      // split into two `allow read` statements for the same parser reason.
       match /responses/{taskId} {
         allow read: if request.auth != null
-                    && (
-                      request.auth.token.email == 'elctogzhan@gmail.com'
-                      || request.auth.token.email in
-                         get(/databases/$(database)/documents/talentMaps/$(mapId)).data.get('allowedEmails', [])
-                    );
+                    && request.auth.token.email == 'elctogzhan@gmail.com';
+
+        allow read: if request.auth != null
+                    && request.auth.token.email in
+                       get(/databases/$(database)/documents/talentMaps/$(mapId)).data.get('allowedEmails', []);
+
         allow write: if false;
       }
     }
