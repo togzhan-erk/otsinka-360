@@ -24,3 +24,9 @@ yarn-debug.log*
 yarn-error.log*
 
 .vercel
+
+# локальные резервные копии Карты талантов (PII сотрудников — не в git)
+/scripts/backups
+
+# ключ сервисного аккаунта Firebase (секрет — не в git)
+/service-account.json

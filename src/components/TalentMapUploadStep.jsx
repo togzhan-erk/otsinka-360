@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Paperclip, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { Paperclip, Plus, Trash2, AlertTriangle, UserPlus, X } from 'lucide-react';
 import { computeHierarchyDepths, suggestGradeByDepth } from '../talentGrades';
 import { DEFAULT_BAND_THRESHOLDS, BAND_THRESHOLD_MIN, BAND_THRESHOLD_MAX, isValidBandThresholds } from '../talentCompliance';
+import { computeMergedTalentAssignments, TALENT_ASSIGNMENT_SELF } from '../talentAssignments';
 
 const FIO_HEADERS = ['фио', 'фио сотрудника'];
 const EMAIL_HEADERS = ['email сотрудника', 'email', 'почта'];
@@ -91,7 +92,7 @@ function GradeBadge({ gradeSource }) {
 // таблица целевых баллов по грейдам. Изменения сохраняются сразу через
 // переданные onSave*-колбэки (тот же паттерн, что и в EmployeesStep.jsx
 // для опросов 360) — отдельного черновика/кнопки «Сохранить всё» нет.
-function TalentMapUploadStep({ employees, gradeTargets, onSaveEmployees, onSaveGradeTargets, bandThresholds, onSaveBandThresholds }) {
+function TalentMapUploadStep({ employees, assignments, gradeTargets, onSaveEmployees, onSaveGradeTargets, bandThresholds, onSaveBandThresholds }) {
   const [error, setError] = useState('');
   const [gradeDrafts, setGradeDrafts] = useState({});
 
@@ -160,6 +161,8 @@ function TalentMapUploadStep({ employees, gradeTargets, onSaveEmployees, onSaveG
 
       {error && <div className="error-message" style={{ marginTop: '1rem' }}>{error}</div>}
 
+      <AddEmployeeSection employees={employees} assignments={assignments || []} onSaveEmployees={onSaveEmployees} />
+
       {employees.length === 0 ? (
         <p style={{ color: 'var(--color-text-muted)', marginTop: '1.5rem' }}>
           Сотрудников пока нет — загрузите список из Excel.
@@ -223,6 +226,182 @@ function TalentMapUploadStep({ employees, gradeTargets, onSaveEmployees, onSaveG
         <div style={{ flex: '1 1 320px', minWidth: '280px' }}>
           <BandThresholdsEditor bandThresholds={bandThresholds} onSave={onSaveBandThresholds} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function emptyAddForm() {
+  return { fio: '', email: '', managerEmail: '', grade: '' };
+}
+
+// Точечное ДОПОЛНЕНИЕ одного сотрудника к уже загруженному списку — в
+// отличие от загрузки Excel (которая целиком заменяет employees), здесь
+// onSaveEmployees всегда вызывается с [...employees, candidate], то есть
+// полным списком, включающим всех прежних сотрудников без изменений.
+// onSaveEmployees (TalentMapTab.persistEmployees) сам по себе уже устроен
+// аддитивно: ensureEmployeeTokens не трогает существующие токены,
+// computeMergedTalentAssignments пересчитывает полный набор задач, но
+// переносит status/updatedAt/completedAt для каждой пары, что не
+// изменилась (сматчено по детерминированному id) — новыми (not_started)
+// становятся только реально новые пары. Подколлекция responses в этом
+// вызове вообще не участвует. Здесь та же логика прогоняется локально
+// (computeMergedTalentAssignments) только для превью — чтобы показать,
+// какие задачи реально появятся, до нажатия «Добавить».
+function AddEmployeeSection({ employees, assignments, onSaveEmployees }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(emptyAddForm());
+  const [saving, setSaving] = useState(false);
+  const candidateIdRef = useRef(null);
+
+  const openForm = () => {
+    candidateIdRef.current = makeTalentEmployeeId();
+    setForm(emptyAddForm());
+    setOpen(true);
+  };
+
+  const closeForm = () => {
+    setOpen(false);
+    setForm(emptyAddForm());
+    candidateIdRef.current = null;
+  };
+
+  const fio = form.fio.trim();
+  const email = form.email.trim();
+  const managerEmail = form.managerEmail.trim();
+  const gradeInput = form.grade.trim();
+  const normalizedEmail = email.toLowerCase();
+
+  let validationError = '';
+  if (fio && email && !EMAIL_RE.test(email)) {
+    validationError = 'Некорректный email сотрудника.';
+  } else if (managerEmail && !EMAIL_RE.test(managerEmail)) {
+    validationError = 'Некорректный email руководителя.';
+  } else if (email && employees.some(e => (e.email || '').trim().toLowerCase() === normalizedEmail)) {
+    validationError = 'Сотрудник с таким email уже есть в списке.';
+  } else if (email && managerEmail && normalizedEmail === managerEmail.toLowerCase()) {
+    validationError = 'Email руководителя не может совпадать с email самого сотрудника.';
+  }
+
+  let preview = null;
+  if (open && fio && email && !validationError) {
+    const candidateBase = { id: candidateIdRef.current, fio, email, managerEmail };
+    let candidate;
+    if (gradeInput) {
+      candidate = { ...candidateBase, grade: gradeInput, gradeSource: 'manual' };
+    } else {
+      const depths = computeHierarchyDepths([...employees, candidateBase]);
+      const depth = depths.get(candidateBase.id) ?? 0;
+      candidate = { ...candidateBase, grade: suggestGradeByDepth(depth), gradeSource: 'suggested' };
+    }
+
+    const nextEmployees = [...employees, candidate];
+    const recomputed = computeMergedTalentAssignments(nextEmployees, assignments);
+    const existingIds = new Set(assignments.map(a => a.id));
+    const newTasks = recomputed.filter(a => !existingIds.has(a.id));
+
+    const nameFor = (id) => (id === candidate.id ? candidate.fio : (employees.find(e => e.id === id)?.fio || '—'));
+
+    preview = { candidate, newTasks, nameFor };
+  }
+
+  const handleConfirm = async () => {
+    if (!preview) return;
+    setSaving(true);
+    try {
+      await onSaveEmployees([...employees, preview.candidate]);
+      closeForm();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: '1rem' }}>
+        <button className="btn btn-secondary btn-sm" onClick={openForm}>
+          <UserPlus size={15} strokeWidth={2} />
+          Добавить сотрудника
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      marginTop: '1.25rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+      padding: '1.25rem', background: '#fff',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <h4 style={{ margin: 0 }}>Добавить сотрудника</h4>
+        <button className="btn btn-icon" title="Отменить" onClick={closeForm}>
+          <X size={16} strokeWidth={2} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px' }}>
+          <label>ФИО</label>
+          <input className="input" style={inputSm} value={form.fio} onChange={(e) => setForm(prev => ({ ...prev, fio: e.target.value }))} />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px' }}>
+          <label>Email сотрудника</label>
+          <input className="input" style={inputSm} value={form.email} onChange={(e) => setForm(prev => ({ ...prev, email: e.target.value }))} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px' }}>
+          <label>Email руководителя (можно пусто)</label>
+          <input className="input" style={inputSm} value={form.managerEmail} onChange={(e) => setForm(prev => ({ ...prev, managerEmail: e.target.value }))} />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 160px' }}>
+          <label>Грейд (можно пусто — подставим подсказку)</label>
+          <input className="input" style={inputSm} value={form.grade} onChange={(e) => setForm(prev => ({ ...prev, grade: e.target.value }))} />
+        </div>
+      </div>
+
+      {validationError && <div className="error-message" style={{ marginBottom: '0.75rem' }}>{validationError}</div>}
+
+      {preview && (
+        <div style={{
+          marginTop: '0.5rem', padding: '0.9rem 1rem', borderRadius: 'var(--radius-card)',
+          background: 'rgba(91, 140, 110, 0.08)', border: '1px solid var(--color-border)',
+        }}>
+          <div style={{ fontSize: '0.88rem', marginBottom: '0.6rem' }}>
+            Будет добавлен: <strong>{preview.candidate.fio}</strong> ({preview.candidate.email})
+            {preview.candidate.managerEmail ? <> · руководитель: {preview.candidate.managerEmail}</> : null}
+            {' · грейд '}{preview.candidate.grade}
+            {preview.candidate.gradeSource === 'suggested' ? ' (подсказка)' : ''}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '0.4rem' }}>
+            Новых задач оценки будет создано: {preview.newTasks.length}
+          </div>
+          {preview.newTasks.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.85rem' }}>
+              {preview.newTasks.map(t => (
+                <li key={t.id}>
+                  {t.type === TALENT_ASSIGNMENT_SELF
+                    ? <>Самооценка — {preview.nameFor(t.evalueeId)}</>
+                    : <>Оценка руководителя — {preview.nameFor(t.raterId)} оценивает {preview.nameFor(t.evalueeId)}</>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
+            Существующие {employees.length} сотрудников, их назначения, токены и пройденные ответы (responses) не изменяются.
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+        <button className="btn btn-primary btn-sm" disabled={!preview || saving} onClick={handleConfirm}>
+          {saving ? 'Добавление...' : 'Добавить'}
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={closeForm} disabled={saving}>
+          Отмена
+        </button>
       </div>
     </div>
   );

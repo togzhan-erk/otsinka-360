@@ -230,6 +230,7 @@ function TalentMapTab({ currentUser }) {
       {!loading && !error && step === 'upload' && (
         <TalentMapUploadStep
           employees={employees}
+          assignments={assignments}
           gradeTargets={gradeTargets}
           onSaveEmployees={persistEmployees}
           onSaveGradeTargets={persistGradeTargets}
