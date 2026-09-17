@@ -23,7 +23,7 @@ function SummaryTile({ icon: Icon, label, value }) {
         {Icon && <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />}
         {label}
       </div>
-      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '2.2rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '2.2rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
         {value}
       </div>
     </div>
@@ -63,11 +63,11 @@ function LaunchStep({ employees, assignments, onGoToInvitations }) {
               style={{
                 display: 'flex', gap: '0.6rem', alignItems: 'flex-start',
                 padding: '0.85rem 1rem', borderRadius: 'var(--radius-card)',
-                background: '#FCEBD9', border: '1px solid rgba(226, 145, 71, 0.3)',
+                background: '#FCF1DF', border: '1px solid rgba(232, 163, 61, 0.35)',
                 color: 'var(--color-text)', marginBottom: '0.6rem', fontSize: '0.88rem',
               }}
             >
-              <AlertTriangle size={16} strokeWidth={2} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: '0.1rem' }} />
+              <AlertTriangle size={16} strokeWidth={2} style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: '0.1rem' }} />
               {text}
             </div>
           ))}

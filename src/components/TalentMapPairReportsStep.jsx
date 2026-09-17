@@ -53,7 +53,7 @@ function ReadinessBadge({ ready }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.15rem 0.6rem', borderRadius: 999,
       fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap',
-      background: ready ? 'rgba(91, 140, 110, 0.14)' : 'var(--color-surface-tint)',
+      background: ready ? 'var(--color-primary-tint)' : 'var(--color-surface-tint)',
       color: ready ? 'var(--color-success)' : 'var(--color-text-muted)',
     }}>
       {ready ? <CheckCircle2 size={13} strokeWidth={2} /> : <Clock size={13} strokeWidth={2} />}

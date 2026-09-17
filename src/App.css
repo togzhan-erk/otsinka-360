@@ -7,40 +7,23 @@
 }
 
 .app-header {
-  background: var(--color-primary);
-  color: #FAF7F1;
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
   text-align: center;
-  padding: 2.5rem 2rem;
-  box-shadow: 0 2px 16px rgba(47, 74, 62, 0.18);
-}
-
-.app-header h1 {
-  font-size: 2.2rem;
-  margin-bottom: 0.4rem;
-  font-weight: 700;
-  color: #FAF7F1;
-  letter-spacing: -0.01em;
+  padding: 2.5rem 2rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .app-logo-heading {
   display: flex;
   justify-content: center;
-  margin: 0 0 0.6rem;
-}
-
-.app-logo {
-  height: 44px;
-  width: auto;
-  display: block;
-  background: var(--color-bg);
-  padding: 6px 16px;
-  border-radius: var(--radius-btn);
+  margin: 0 0 0.4rem;
 }
 
 .app-header p {
   font-size: 1rem;
-  opacity: 0.8;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  color: var(--color-text-secondary);
+  font-family: 'Inter', sans-serif;
   font-weight: 400;
 }
 
@@ -146,7 +129,7 @@
   height: 56px;
   margin: 0 auto;
   border-radius: 50%;
-  background: rgba(47, 74, 62, 0.08);
+  background: var(--color-primary-tint);
   color: var(--color-primary);
 }
 
@@ -184,15 +167,13 @@
 }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────
-   One consistent shape across every button: 8px radius, the same padding
+   One consistent shape across every button: 12px radius, the same padding
    scale, the same font. Only the fill/border differ per variant:
-     .btn-primary   — filled #2F4A3E, white text. The default action.
-     .btn-secondary — outline #2F4A3E, transparent fill. Secondary action.
+     .btn-primary   — filled var(--color-primary), white text. The default action.
+     .btn-secondary — outline, white fill, dark text. Secondary action.
      .btn-success   — kept as a class name for backward compatibility with
-                       existing call sites, but now IS .btn-primary (green
-                       fill) — orange is reserved for a handful of specific
-                       accent CTAs (PDF/IPR) that are styled inline in
-                       EmployeeReport.jsx, not through this class.
+                       existing call sites, but now IS .btn-primary (same
+                       green fill) — there is no separate "success" color.
    Buttons are auto-width (sized to content) by default; add .btn-block for
    the few full-width form-submit buttons that want to span their container.
    ────────────────────────────────────────────────────────────────────── */
@@ -205,7 +186,7 @@
   border-radius: var(--radius-btn);
   font-size: 0.92rem;
   font-weight: 600;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   text-align: center;
@@ -225,14 +206,14 @@
 .btn-primary,
 .btn-success {
   background: var(--color-primary);
-  color: #FAF7F1;
+  color: #fff;
   border: 1.5px solid var(--color-primary);
 }
 
 .btn-primary:hover:not(:disabled),
 .btn-success:hover:not(:disabled) {
-  background: #24392f;
-  border-color: #24392f;
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 .btn-secondary {
@@ -242,7 +223,7 @@
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(47, 74, 62, 0.06);
+  background: var(--color-primary-tint);
 }
 
 /* Reserved for the handful of high-value single accent actions (e.g.
@@ -291,9 +272,9 @@
 }
 
 .btn-danger-ghost:hover:not(:disabled) {
-  background: #FDF1EF;
+  background: #FBEAEA;
   color: var(--color-danger);
-  border-color: #E8B5AE;
+  border-color: #F0BFBF;
 }
 
 /* ─── Forms ──────────────────────────────────────────────────────────────── */
@@ -315,7 +296,7 @@
   padding: 0.8rem 1rem;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-input);
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
   color: var(--color-text);
   background: #fff;
@@ -326,7 +307,7 @@
 .textarea:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(226, 145, 71, 0.15);
+  box-shadow: 0 0 0 3px rgba(30, 158, 112, 0.15);
 }
 
 .textarea {
@@ -336,8 +317,8 @@
 
 /* ─── Errors / Info ──────────────────────────────────────────────────────── */
 .error-message {
-  background: #FDF1EF;
-  border: 1.5px solid #E8B5AE;
+  background: #FBEAEA;
+  border: 1.5px solid #F0BFBF;
   color: var(--color-danger);
   padding: 1rem 1.25rem;
   border-radius: var(--radius-btn);
@@ -346,8 +327,8 @@
 }
 
 .info-message {
-  background: #F0F5F2;
-  border: 1.5px solid #B8D4C4;
+  background: var(--color-primary-tint);
+  border: 1.5px solid #B9E3D1;
   color: var(--color-success);
   padding: 1rem 1.25rem;
   border-radius: var(--radius-btn);
@@ -400,7 +381,7 @@
 .score-number-input:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(226, 145, 71, 0.15);
+  box-shadow: 0 0 0 3px rgba(30, 158, 112, 0.15);
 }
 
 .open-questions {
@@ -422,7 +403,7 @@
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-card);
   cursor: pointer;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   transition: all 0.2s ease;
   gap: 1rem;
   flex-wrap: wrap;
@@ -443,7 +424,7 @@
 
 .talent-indicator h5 {
   margin: 0 0 0.9rem;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.98rem;
   font-weight: 600;
   color: var(--color-text);
@@ -461,7 +442,7 @@
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-btn);
   cursor: pointer;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   transition: all 0.15s ease;
 }
 
@@ -475,7 +456,7 @@
 
 .talent-level-option.selected {
   border-color: var(--color-primary);
-  background: rgba(47, 74, 62, 0.06);
+  background: var(--color-primary-tint);
 }
 
 .talent-level-num {
@@ -539,126 +520,258 @@
   border: 1px solid var(--color-border);
 }
 
-/* ─── Admin Navbar ───────────────────────────────────────────────────────── */
-/* Full-bleed dark-green top bar for AdminDashboard, replacing both the old
-   generic .app-header (suppressed for this stage, see App.js) and the old
-   in-card "Панель администратора" header + .admin-tabs strip. Sits directly
-   inside .app (via .app-main--admin stripping app-main's own padding), so
-   it needs no width/breakout tricks to reach the edges of the window. */
-.admin-navbar {
-  background: var(--color-primary);
+/* ─── Admin Sidebar ──────────────────────────────────────────────────────── */
+/* Left sidebar + content shell for AdminDashboard, replacing the old
+   full-bleed top navbar. Sits directly inside .app (via .app-main--admin
+   stripping app-main's own padding), so it needs no width/breakout tricks
+   to reach the edges of the window. */
+.admin-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
   width: 100%;
-  box-shadow: 0 2px 12px rgba(47, 74, 62, 0.15);
 }
 
-.admin-navbar-inner {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  min-height: 60px;
-  padding: 0.5rem 1.5rem;
-  max-width: 1400px;
-  margin: 0 auto;
-  flex-wrap: wrap;
-}
-
-.admin-navbar-logo {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
+.admin-sidebar {
   flex-shrink: 0;
+  width: 264px;
+  background: var(--color-bg-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
 }
 
-.admin-navbar-logo-text {
-  font-family: 'Fraunces', Georgia, serif;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--color-bg);
-  white-space: nowrap;
+.admin-sidebar-header {
+  padding: 1.75rem 1.5rem 1rem;
 }
 
-.admin-navbar-tabs {
+.admin-sidebar-home {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  flex-wrap: wrap;
-  flex: 1;
-}
-
-.admin-navbar-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.85rem;
-  border-radius: 7px;
-  border: none;
-  background: transparent;
-  color: #C7D2CB;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 0.85rem;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  margin: 0 0.75rem 0.5rem;
+  border-radius: var(--radius-btn);
+  color: var(--color-text-primary);
+  font-size: 0.92rem;
   font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
+  background: transparent;
+  border: none;
+  width: calc(100% - 1.5rem);
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.admin-sidebar-home:hover {
+  background: var(--color-hover-tint);
+}
+
+.admin-sidebar-home.active {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.admin-sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.25rem 0.75rem 1rem;
+}
+
+.admin-sidebar-group-label {
+  padding: 1rem 0.75rem 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.admin-sidebar-parent {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-btn);
+  color: var(--color-text-primary);
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.admin-navbar-tab svg {
+.admin-sidebar-parent:hover {
+  background: var(--color-hover-tint);
+}
+
+.admin-sidebar-parent.open.group-tools {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+}
+
+.admin-sidebar-parent.open.group-system {
+  background: var(--color-accent-pink-tint);
+  color: var(--color-accent-pink);
+}
+
+.admin-sidebar-parent-icon {
+  display: flex;
   flex-shrink: 0;
 }
 
-.admin-navbar-tab:hover:not(.active) {
-  color: var(--color-bg);
+.admin-sidebar-parent-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.admin-navbar-tab.active {
-  background: var(--color-leaf);
-  color: var(--color-bg);
+.admin-sidebar-chevron {
+  flex-shrink: 0;
+  display: flex;
+  transition: transform 0.15s ease;
+}
+
+.admin-sidebar-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.15rem 0 0.35rem 2.15rem;
+}
+
+.admin-sidebar-subitem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-btn);
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-sidebar-subitem:hover {
+  background: var(--color-hover-tint);
+  color: var(--color-text-primary);
+}
+
+.admin-sidebar-subitem.active.group-tools {
+  background: var(--color-primary-tint);
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
-.admin-navbar-actions {
+.admin-sidebar-subitem.active.group-system {
+  background: var(--color-accent-pink-tint);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.admin-sidebar-disabled {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-shrink: 0;
-  margin-left: auto;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-btn);
+  color: var(--color-text-secondary);
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: not-allowed;
+  opacity: 0.6;
+  background: transparent;
+  border: none;
+  text-align: left;
 }
 
-.admin-navbar-email {
-  color: #C7D2CB;
-  font-size: 0.78rem;
-  white-space: nowrap;
-  max-width: 180px;
+.admin-sidebar-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.admin-sidebar-avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.admin-sidebar-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-sidebar-user-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Buttons keep the shared .btn shape but need light-on-dark colors here. */
-.admin-navbar .btn-secondary {
-  border-color: rgba(250, 247, 241, 0.5);
-  color: var(--color-bg);
+.admin-sidebar-user-role {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.admin-navbar .btn-secondary:hover:not(:disabled) {
-  background: rgba(250, 247, 241, 0.12);
-  border-color: var(--color-bg);
+.admin-sidebar-logout {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-btn);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.admin-navbar .btn-ghost {
-  border-color: rgba(250, 247, 241, 0.3);
-  color: #C7D2CB;
+.admin-sidebar-logout:hover {
+  background: var(--color-hover-tint);
+  color: var(--color-danger);
 }
 
-.admin-navbar .btn-ghost:hover:not(:disabled) {
-  background: rgba(250, 247, 241, 0.1);
-  color: var(--color-bg);
-  border-color: rgba(250, 247, 241, 0.5);
+/* Content area beside the sidebar — scrolls independently. */
+.admin-content-area {
+  flex: 1;
+  min-width: 0;
+  background: var(--color-bg-app);
 }
 
-/* Centered content wrapper below the navbar — carries the padding/max-width
+/* Content wrapper inside the content area — carries the padding/max-width
    app-main used to provide before AdminDashboard opted out of it. */
 .admin-content {
-  padding: 2.5rem 1.5rem;
+  padding: 2.5rem 2rem;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
@@ -681,7 +794,7 @@
 }
 
 .stat-number {
-  font-family: 'Fraunces', serif;
+  font-family: 'Inter', sans-serif;
   font-size: 2.5rem;
   font-weight: 700;
   color: var(--color-primary);
@@ -716,27 +829,19 @@
   border-radius: var(--radius-card);
   cursor: pointer;
   font-weight: 600;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   color: var(--color-text);
   transition: all 0.2s ease;
 }
 
 .upload-button:hover {
-  background: #e8e4dc;
+  background: var(--color-hover-tint);
   border-color: var(--color-accent);
   color: var(--color-primary);
 }
 
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .app-header h1 {
-    font-size: 1.6rem;
-  }
-
-  .app-logo {
-    height: 36px;
-  }
-
   .card {
     padding: 1.75rem 1.25rem;
   }
@@ -764,21 +869,23 @@
     font-size: 1.5rem;
   }
 
-  .admin-navbar-inner {
-    padding: 0.6rem 1rem;
-    gap: 1rem;
-  }
-
-  .admin-navbar-tab {
-    padding: 0.4rem 0.6rem;
-    font-size: 0.78rem;
-  }
-
-  .admin-navbar-email {
-    display: none;
+  .admin-sidebar {
+    width: 220px;
   }
 
   .admin-content {
     padding: 1.75rem 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-shell {
+    flex-direction: column;
+  }
+
+  .admin-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
   }
 }

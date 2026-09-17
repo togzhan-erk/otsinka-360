@@ -48,9 +48,9 @@ const STATUS_LABELS = {
 };
 
 const STATUS_STYLE = {
-  not_started: { color: '#B42318', bg: '#FCE8E6' },
-  in_progress: { color: '#8A5A22', bg: 'rgba(226, 145, 71, 0.14)' },
-  completed: { color: 'var(--color-success)', bg: 'rgba(91, 140, 110, 0.14)' },
+  not_started: { color: 'var(--color-danger)', bg: '#FBEAEA' },
+  in_progress: { color: 'var(--color-warning)', bg: 'rgba(232, 163, 61, 0.14)' },
+  completed: { color: 'var(--color-success)', bg: 'var(--color-primary-tint)' },
 };
 
 const thStyle = {
@@ -80,7 +80,7 @@ function StatCard({ label, value }) {
       padding: '1.25rem 1.5rem', minWidth: '160px', flex: '1 1 160px',
     }}>
       <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.4rem' }}>{label}</div>
-      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
         {value}
       </div>
     </div>

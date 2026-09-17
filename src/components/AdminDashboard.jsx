@@ -7,80 +7,210 @@ import {
 import { STANDARD_COMPETENCIES, TOP_COMPETENCIES, DEFAULT_TRACK } from '../competencies';
 import { isSuperadmin } from '../auth';
 import { TALENT_MAP_DOC_ID } from '../talentMap';
-import { LogoIcon } from './Logo';
+import Logo from './Logo';
 import { listClients, createClient, setClientAccess, resetClientPassword, deleteClientAccount } from '../clients';
 import EmployeesStep from './EmployeesStep';
 import RoleAssignment from './RoleAssignment';
 import LaunchStep from './LaunchStep';
-import TalentMapTab from './TalentMapTab';
+import TalentMapTab, { TALENT_MAP_BASE_STEPS } from './TalentMapTab';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
 import {
   LayoutDashboard, Settings, Mail, BarChart3, Archive, Building2,
   Plus, LogOut, Bell, Copy, Check, CheckCircle2, Trash2, Download,
   FileText, ArrowLeft, Clock, Circle, Play, Search, Lock, Unlock, KeyRound,
-  Users, ClipboardList, Target,
+  Users, ClipboardList, Target, ChevronDown, ChevronRight,
 } from 'lucide-react';
 
 const BASE_URL = 'https://otsinka-360.vercel.app';
 
-// ── Admin navbar ────────────────────────────────────────────────────────────
+// ── Admin sidebar ────────────────────────────────────────────────────────────
 //
-// Full-width dark-green top bar — logo, tabs, and account actions in one
-// row. Purely presentational: all it needs is the tab state and a handful
-// of already-computed values from AdminDashboard, passed in as props.
+// Left sidebar — logo, "Главная", grouped/collapsible tool + system nav, and
+// the account block at the bottom. Purely presentational: all it needs is
+// the tab state and a handful of already-computed values from
+// AdminDashboard, passed in as props. Which top-level content renders is
+// still driven entirely by the same `activeTab` state as before — the
+// sidebar only changes how that state is navigated to.
 
-const NAV_TABS = [
-  { key: 'overview', label: 'Главная', Icon: LayoutDashboard },
+const ASSESSMENT_360_CHILDREN = [
   { key: 'setup', label: 'Настройка опроса', Icon: Settings },
   { key: 'invitations', label: 'Приглашения', Icon: Mail },
   { key: 'results', label: 'Результаты', Icon: BarChart3 },
-  { key: 'archive', label: 'Архив', Icon: Archive },
 ];
 
-function AdminNavbar({ activeTab, onTabChange, isSuperadminUser, isTalentMapUser, sentCount, totalAssignments, currentUser, onStartNewSurvey, onLogout }) {
-  // «Карта талантов» и «Клиенты» — независимые проверки: карта талантов
-  // доступна всем email из TALENT_MAP_ALLOWED_EMAILS, а «Клиенты» — строго
-  // суперадмину, даже если это один и тот же список из одного человека.
-  const tabs = [
-    ...NAV_TABS,
-    ...(isTalentMapUser ? [{ key: 'talentMap', label: 'Карта талантов', Icon: Target }] : []),
-    ...(isSuperadminUser ? [{ key: 'clients', label: 'Клиенты', Icon: Building2 }] : []),
-  ];
+function groupForTab(tab) {
+  if (['setup', 'invitations', 'results'].includes(tab)) return 'assessment360';
+  if (tab === 'talentMap') return 'talentMap';
+  if (['archive', 'clients'].includes(tab)) return 'settings';
+  return null;
+}
+
+function SidebarParent({ label, Icon, group, open, onToggle, children }) {
+  return (
+    <div>
+      <button
+        type="button"
+        className={`admin-sidebar-parent${open ? ` open group-${group}` : ''}`}
+        onClick={onToggle}
+      >
+        <span className="admin-sidebar-parent-icon"><Icon size={17} strokeWidth={2} /></span>
+        <span className="admin-sidebar-parent-label">{label}</span>
+        <span className="admin-sidebar-chevron">
+          {open ? <ChevronDown size={15} strokeWidth={2} /> : <ChevronRight size={15} strokeWidth={2} />}
+        </span>
+      </button>
+      {open && <div className="admin-sidebar-children">{children}</div>}
+    </div>
+  );
+}
+
+function SidebarSubitem({ label, Icon, group, active, onClick, badge }) {
+  return (
+    <button
+      type="button"
+      className={`admin-sidebar-subitem${active ? ` active group-${group}` : ''}`}
+      onClick={onClick}
+    >
+      {Icon && <Icon size={15} strokeWidth={2} />}
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+      {badge && (
+        <span style={{
+          flexShrink: 0, background: 'var(--color-accent-pink)', color: '#fff',
+          fontSize: '0.68rem', fontWeight: 700, borderRadius: 999, padding: '0.1rem 0.4rem', lineHeight: 1.4,
+        }}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function AdminSidebar({
+  activeTab, onTabChange, isSuperadminUser, isTalentMapUser, sentCount, totalAssignments,
+  talentMapStep, onTalentMapStepChange, currentUser, onLogout,
+}) {
+  const [expandedGroup, setExpandedGroup] = useState(() => groupForTab(activeTab) || 'assessment360');
+
+  useEffect(() => {
+    const g = groupForTab(activeTab);
+    if (g) setExpandedGroup(g);
+  }, [activeTab]);
+
+  const toggleGroup = (g) => setExpandedGroup(prev => (prev === g ? null : g));
+
+  // «Доступ» — то же правило видимости, что и в TalentMapTab: только
+  // суперадмин может это менять, поэтому только он видит пункт.
+  const talentMapChildren = isSuperadminUser
+    ? [...TALENT_MAP_BASE_STEPS, { key: 'access', title: 'Доступ' }]
+    : TALENT_MAP_BASE_STEPS;
+
+  const displayName = currentUser?.displayName || currentUser?.email || '';
+  const userInitial = displayName ? displayName.trim().charAt(0).toUpperCase() : '?';
+  const userRoleLabel = isSuperadminUser ? 'Суперадмин' : 'Администратор';
 
   return (
-    <div className="admin-navbar">
-      <div className="admin-navbar-inner">
-        <div className="admin-navbar-logo">
-          <LogoIcon style={{ width: 30, height: 30, flexShrink: 0 }} />
-          <span className="admin-navbar-logo-text">Growth 360</span>
-        </div>
+    <div className="admin-sidebar">
+      <div className="admin-sidebar-header">
+        <Logo />
+      </div>
 
-        <div className="admin-navbar-tabs">
-          {tabs.map(t => (
-            <button
+      <button
+        type="button"
+        className={`admin-sidebar-home${activeTab === 'overview' ? ' active' : ''}`}
+        onClick={() => onTabChange('overview')}
+      >
+        <LayoutDashboard size={17} strokeWidth={2} />
+        Главная
+      </button>
+
+      <nav className="admin-sidebar-nav">
+        <div className="admin-sidebar-group-label">Инструменты</div>
+
+        <SidebarParent
+          label="Оценка 360"
+          Icon={ClipboardList}
+          group="tools"
+          open={expandedGroup === 'assessment360'}
+          onToggle={() => toggleGroup('assessment360')}
+        >
+          {ASSESSMENT_360_CHILDREN.map(t => (
+            <SidebarSubitem
               key={t.key}
-              className={`admin-navbar-tab ${activeTab === t.key ? 'active' : ''}`}
+              label={t.label}
+              Icon={t.Icon}
+              group="tools"
+              active={activeTab === t.key}
               onClick={() => onTabChange(t.key)}
-            >
-              <t.Icon size={16} strokeWidth={1.9} />
-              {t.label}
-              {t.key === 'invitations' && sentCount > 0 && ` (${sentCount}/${totalAssignments})`}
-            </button>
+              badge={t.key === 'invitations' && sentCount > 0 ? `${sentCount}/${totalAssignments}` : null}
+            />
           ))}
+        </SidebarParent>
+
+        {isTalentMapUser && (
+          <SidebarParent
+            label="Карта талантов"
+            Icon={Target}
+            group="tools"
+            open={expandedGroup === 'talentMap'}
+            onToggle={() => toggleGroup('talentMap')}
+          >
+            {talentMapChildren.map(s => (
+              <SidebarSubitem
+                key={s.key}
+                label={s.title}
+                group="tools"
+                active={activeTab === 'talentMap' && talentMapStep === s.key}
+                onClick={() => { onTabChange('talentMap'); onTalentMapStepChange(s.key); }}
+              />
+            ))}
+          </SidebarParent>
+        )}
+
+        <div className="admin-sidebar-disabled" title="Скоро">
+          <Plus size={17} strokeWidth={2} />
+          Добавить инструмент
         </div>
 
-        <div className="admin-navbar-actions">
-          {currentUser?.email && <span className="admin-navbar-email">{currentUser.email}</span>}
-          <button onClick={onStartNewSurvey} className="btn btn-secondary btn-sm">
-            <Plus size={15} strokeWidth={2} />
-            Новый опрос
-          </button>
-          <button onClick={onLogout} className="btn btn-ghost btn-sm">
-            <LogOut size={15} strokeWidth={2} />
-            Выйти
-          </button>
+        <div className="admin-sidebar-group-label">Система</div>
+
+        <SidebarParent
+          label="Настройки"
+          Icon={Settings}
+          group="system"
+          open={expandedGroup === 'settings'}
+          onToggle={() => toggleGroup('settings')}
+        >
+          {isSuperadminUser && (
+            <SidebarSubitem
+              label="Доступы"
+              Icon={Building2}
+              group="system"
+              active={activeTab === 'clients'}
+              onClick={() => onTabChange('clients')}
+            />
+          )}
+          <SidebarSubitem
+            label="Архив"
+            Icon={Archive}
+            group="system"
+            active={activeTab === 'archive'}
+            onClick={() => onTabChange('archive')}
+          />
+        </SidebarParent>
+      </nav>
+
+      <div className="admin-sidebar-footer">
+        <div className="admin-sidebar-avatar">{userInitial}</div>
+        <div className="admin-sidebar-user-info">
+          <div className="admin-sidebar-user-name">{displayName}</div>
+          <div className="admin-sidebar-user-role">{userRoleLabel}</div>
         </div>
+        <button type="button" className="admin-sidebar-logout" onClick={onLogout} title="Выйти">
+          <LogOut size={16} strokeWidth={2} />
+        </button>
       </div>
     </div>
   );
@@ -88,6 +218,10 @@ function AdminNavbar({ activeTab, onTabChange, isSuperadminUser, isTalentMapUser
 
 function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId, currentUser, onStartOver, onLogout, onStartNewSurvey, onSetupComplete, onDeleteAssignment, onOpenReport, onCycleActivated }) {
   const [activeTab, setActiveTab] = useState('overview');
+  // Lifted out of TalentMapTab so the sidebar (a sibling component) can
+  // render and drive the same step navigation — purely which step-component
+  // renders inside the tab, not tied to any Firestore read/write.
+  const [talentMapStep, setTalentMapStep] = useState('upload');
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingResults, setLoadingResults] = useState(true);
   const [firestoreError, setFirestoreError] = useState(null);
@@ -327,10 +461,10 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
   // employees and is out collecting responses ("Идёт сбор оценок"), or
   // there's no active cycle at all yet.
   const homeStatus = !cycleId
-    ? { label: 'Нет активного опроса', color: 'var(--color-text-muted)', bg: 'var(--color-surface-tint)' }
+    ? { label: 'Нет активного опроса', color: 'var(--color-text-secondary)', bg: 'var(--color-bg-app)' }
     : !hasEmployees
-      ? { label: 'Черновик', color: 'var(--color-text-muted)', bg: 'var(--color-surface-tint)' }
-      : { label: 'Идёт сбор оценок', color: 'var(--color-leaf)', bg: 'rgba(63, 97, 82, 0.1)' };
+      ? { label: 'Черновик', color: 'var(--color-text-secondary)', bg: 'var(--color-bg-app)' }
+      : { label: 'Идёт сбор оценок', color: 'var(--color-warning)', bg: 'rgba(232, 163, 61, 0.12)' };
 
   const grouped = groupFeedbackByEvaluee(feedbackList);
 
@@ -338,17 +472,20 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
 
   return (
     <>
-      <AdminNavbar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        isSuperadminUser={isSuperadminUser}
-        isTalentMapUser={isTalentMapUser}
-        sentCount={sentCount}
-        totalAssignments={totalAssignments}
-        currentUser={currentUser}
-        onStartNewSurvey={() => setShowNewSurveyModal(true)}
-        onLogout={onLogout}
-      />
+      <div className="admin-shell">
+        <AdminSidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          isSuperadminUser={isSuperadminUser}
+          isTalentMapUser={isTalentMapUser}
+          sentCount={sentCount}
+          totalAssignments={totalAssignments}
+          talentMapStep={talentMapStep}
+          onTalentMapStepChange={setTalentMapStep}
+          currentUser={currentUser}
+          onLogout={onLogout}
+        />
+        <div className="admin-content-area">
       <div className="admin-content">
         {/* ── Home ── */}
         {activeTab === 'overview' && (
@@ -359,18 +496,24 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
             }}>
               <div>
                 <h3 style={{ margin: 0 }}>{homeTitle}</h3>
-                <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-muted)' }}>
+                <p style={{ margin: '0.35rem 0 0', color: 'var(--color-text-secondary)' }}>
                   {homeSubtitle}
                 </p>
               </div>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', flexShrink: 0,
-                padding: '0.4rem 0.9rem', borderRadius: 999,
-                fontSize: '0.82rem', fontWeight: 600,
-                background: homeStatus.bg, color: homeStatus.color,
-              }}>
-                {homeStatus.label}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <button onClick={() => setShowNewSurveyModal(true)} className="btn btn-secondary btn-sm">
+                  <Plus size={15} strokeWidth={2} />
+                  Новый опрос
+                </button>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                  padding: '0.4rem 0.9rem', borderRadius: 999,
+                  fontSize: '0.82rem', fontWeight: 600,
+                  background: homeStatus.bg, color: homeStatus.color,
+                }}>
+                  {homeStatus.label}
+                </span>
+              </div>
             </div>
 
             {!hasEmployees ? (
@@ -473,10 +616,10 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '1rem 1.1rem',
-                        border: completed ? '1px solid var(--color-border)' : '1px solid rgba(193, 91, 74, 0.25)',
+                        border: completed ? '1px solid var(--color-border)' : '1px solid rgba(209, 67, 67, 0.25)',
                         borderRadius: 'var(--radius-card)',
                         marginBottom: '0.75rem',
-                        background: completed ? '#fff' : 'rgba(193, 91, 74, 0.04)',
+                        background: completed ? '#fff' : 'rgba(209, 67, 67, 0.04)',
                         flexWrap: 'wrap',
                         gap: '0.75rem',
                       }}
@@ -627,7 +770,7 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
              своя структура данных и своё хранение (src/talentMap.js), не
              связан с опросами 360 выше на этой странице. ── */}
         {activeTab === 'talentMap' && isTalentMapUser && (
-          <TalentMapTab currentUser={currentUser} />
+          <TalentMapTab currentUser={currentUser} step={talentMapStep} onStepChange={setTalentMapStep} />
         )}
 
         {/* ── Clients (superadmin only) ── */}
@@ -640,6 +783,8 @@ function AdminDashboard({ employees, roleAssignments, submittedFeedback, cycleId
             <ArrowLeft size={15} strokeWidth={2} />
             На главную
           </button>
+        </div>
+      </div>
         </div>
       </div>
 
@@ -727,24 +872,28 @@ function ProgressWidget({ completed, total, pct }) {
 function HomeMetricCard({ icon: Icon, label, value, sub, children }) {
   return (
     <div style={{
-      background: '#fff', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
+      background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-card)',
       padding: '1.5rem', textAlign: 'center',
     }}>
+      {Icon && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 36, height: 36, margin: '0 auto 0.75rem', borderRadius: '50%',
+          background: 'var(--color-bg-app)', color: 'var(--color-text-secondary)',
+        }}>
+          <Icon size={17} strokeWidth={2} />
+        </div>
+      )}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
         fontSize: '0.8125rem', fontWeight: 600,
-        color: 'var(--color-text-muted)', marginBottom: '0.5rem',
+        color: 'var(--color-text-secondary)', marginBottom: '0.4rem',
       }}>
-        {Icon && <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />}
         {label}
       </div>
-      <div style={{
-        fontFamily: "'Fraunces', Georgia, serif", fontSize: '2.2rem', fontWeight: 700,
-        color: 'var(--color-primary)', lineHeight: 1,
-      }}>
+      <div style={{ fontSize: '2.2rem', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1 }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '0.35rem' }}>{sub}</div>}
+      {sub && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '0.35rem' }}>{sub}</div>}
       {children}
     </div>
   );
@@ -752,7 +901,7 @@ function HomeMetricCard({ icon: Icon, label, value, sub, children }) {
 
 const CHECKLIST_STATUS_STYLE = {
   done: { Icon: CheckCircle2, color: 'var(--color-success)' },
-  inProgress: { Icon: Clock, color: 'var(--color-accent)' },
+  inProgress: { Icon: Clock, color: 'var(--color-warning)' },
   pending: { Icon: Circle, color: 'var(--color-text-muted)' },
 };
 
@@ -808,11 +957,16 @@ function HomeSummary({ employeesCount, totalAssignments, completedCount, complet
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
         <HomeMetricCard icon={Users} label="Сотрудников" value={employeesCount} />
         <HomeMetricCard icon={ClipboardList} label="Назначений" value={totalAssignments} />
-        <HomeMetricCard icon={CheckCircle2} label="Прошли оценку" value={`${completionPct}%`}>
+        <HomeMetricCard
+          icon={CheckCircle2}
+          label="Прошли оценку"
+          value={`${completionPct}%`}
+          sub={hasAssignments ? `${completedCount} из ${totalAssignments}` : null}
+        >
           <div style={{ background: 'var(--color-border)', borderRadius: 999, height: 6, overflow: 'hidden', marginTop: '0.65rem' }}>
             <div style={{
               width: `${completionPct}%`, height: '100%', borderRadius: 999,
-              background: 'var(--color-accent)', transition: 'width 0.3s ease',
+              background: 'var(--color-primary)', transition: 'width 0.3s ease',
             }} />
           </div>
         </HomeMetricCard>
@@ -1251,8 +1405,8 @@ function ClientStatusBadge({ active }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', padding: '0.15rem 0.6rem',
       borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap',
-      background: active ? 'rgba(63, 97, 82, 0.12)' : 'rgba(138, 126, 107, 0.15)',
-      color: active ? 'var(--color-leaf)' : 'var(--color-text-muted)',
+      background: active ? 'var(--color-primary-tint)' : 'rgba(118, 118, 113, 0.15)',
+      color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
     }}>
       {active ? 'Активен' : 'Доступ закрыт'}
     </span>
@@ -1434,7 +1588,7 @@ function ClientsTab({ currentUser }) {
 
   return (
     <div>
-      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Клиенты</h3>
+      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Доступы</h3>
       <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
         Управление доступами клиентов
       </p>

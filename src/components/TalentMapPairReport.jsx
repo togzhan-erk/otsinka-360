@@ -4,12 +4,13 @@ import { getTalentResponse } from '../talentMap';
 import { TALENT_COMPETENCIES } from '../talentCompetencies';
 
 const BRAND = {
-  primary: '#2F4A3E',
-  leaf: '#3F6152',
-  accent: '#E29147',
-  cream: '#FAF7F1',
-  muted: '#8A7E6B',
-  danger: '#C15B4A',
+  primary: '#1E9E70',
+  leaf: '#1E9E70',
+  accent: '#E8A33D',
+  pink: '#D2649A',
+  cream: '#F7F7F5',
+  muted: '#767671',
+  danger: '#D14343',
 };
 
 // Строка «расходится» при разнице >= 1 балла между самооценкой и оценкой
@@ -217,8 +218,8 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
       <div
         ref={reportRef}
         style={{
-          fontFamily: "'Plus Jakarta Sans', sans-serif",
-          color: '#2B2620',
+          fontFamily: "'Inter', sans-serif",
+          color: 'var(--color-text-primary)',
           background: BRAND.cream,
           borderRadius: 'var(--radius-card)',
           overflow: 'hidden',
@@ -232,7 +233,7 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap',
         }}>
           <div>
-            <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", color: '#fff', fontSize: '1.7rem', fontWeight: 700, margin: '0 0 0.45rem' }}>
+            <h1 style={{ fontFamily: "'Inter', sans-serif", color: '#fff', fontSize: '1.7rem', fontWeight: 700, margin: '0 0 0.45rem' }}>
               Карта талантов — отчёт по паре
             </h1>
             <div style={{ color: 'rgba(250,247,241,0.82)', fontSize: '0.95rem' }}>
@@ -264,7 +265,7 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
                     display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem',
                     borderBottom: '2px solid var(--color-border)', paddingBottom: '0.4rem', marginBottom: '0.6rem',
                   }}>
-                    <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", color: BRAND.primary, fontSize: '1.1rem', margin: 0 }}>
+                    <h3 style={{ fontFamily: "'Inter', sans-serif", color: BRAND.primary, fontSize: '1.1rem', margin: 0 }}>
                       {comp.name}
                     </h3>
                     <span style={{ fontSize: '0.82rem', color: BRAND.muted }}>
@@ -289,7 +290,7 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
                           const hasExample = ind.selfExample || ind.managerExample;
                           return (
                             <React.Fragment key={ind.id}>
-                              <tr style={{ background: isDiscrepancy ? '#FCEBD9' : 'transparent' }}>
+                              <tr style={{ background: isDiscrepancy ? '#FCF1DF' : 'transparent' }}>
                                 <td style={tdStyle}>{ind.name}</td>
                                 <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: BRAND.accent }}>{ind.selfScore ?? '—'}</td>
                                 <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: BRAND.primary }}>{ind.managerScore ?? '—'}</td>
@@ -298,7 +299,7 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
                                 </td>
                               </tr>
                               {hasExample && (
-                                <tr style={{ background: isDiscrepancy ? '#FCEBD9' : 'var(--color-surface-tint)' }}>
+                                <tr style={{ background: isDiscrepancy ? '#FCF1DF' : 'var(--color-surface-tint)' }}>
                                   <td colSpan={4} style={{ ...tdStyle, paddingTop: 0, fontSize: '0.82rem', color: BRAND.muted, lineHeight: 1.5 }}>
                                     {ind.selfExample && <div><strong style={{ color: BRAND.accent }}>Пример (самооценка):</strong> {ind.selfExample}</div>}
                                     {ind.managerExample && <div><strong style={{ color: BRAND.primary }}>Пример (руководитель):</strong> {ind.managerExample}</div>}
@@ -322,10 +323,10 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
               {/* AI-комментарий */}
               <div style={{ marginTop: '2rem', padding: '1.5rem', borderRadius: 'var(--radius-card)', background: BRAND.primary, color: '#fff' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem' }}>
-                  <span style={{ background: BRAND.accent, color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px', letterSpacing: '0.04em' }}>
+                  <span style={{ background: BRAND.pink, color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px', letterSpacing: '0.04em' }}>
                     AI
                   </span>
-                  <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", margin: 0, fontSize: '1.15rem' }}>
+                  <h3 style={{ fontFamily: "'Inter', sans-serif", margin: 0, fontSize: '1.15rem' }}>
                     Комментарий к паре
                   </h3>
                 </div>
@@ -377,7 +378,7 @@ function TalentMapPairReport({ pair, currentUser, existingComment, onSaveComment
                       fontSize: '0.85rem', cursor: 'pointer', padding: 0, textDecoration: 'underline',
                       opacity: aiGenerating ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
                     } : {
-                      background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
+                      background: '#fff', color: BRAND.primary, border: 'none', borderRadius: 'var(--radius-btn)',
                       padding: '0.55rem 1.15rem', fontSize: '0.88rem', fontWeight: 600,
                       cursor: 'pointer', opacity: aiGenerating ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                     }}
@@ -416,7 +417,7 @@ const tdStyle = { padding: '0.5rem 0.65rem', fontSize: '0.85rem', verticalAlign:
 function CommentBlock({ title, text }) {
   return (
     <div style={{ marginBottom: '1.1rem' }}>
-      <div style={{ fontFamily: "'Fraunces', Georgia, serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
         {title}
       </div>
       <p style={{ margin: 0, color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
@@ -429,7 +430,7 @@ function CommentBlock({ title, text }) {
 function QuestionsBlock({ title, questions }) {
   return (
     <div style={{ marginBottom: '1.1rem' }}>
-      <div style={{ fontFamily: "'Fraunces', Georgia, serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
         {title}
       </div>
       <ol style={{ margin: 0, paddingLeft: '1.15rem', color: 'rgba(250,247,241,0.92)', fontSize: '0.92rem', lineHeight: 1.7 }}>

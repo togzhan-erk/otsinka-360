@@ -98,7 +98,7 @@ function TalentMapNineBoxStep({
     const canvas = await html2canvas(el, {
       scale: 2,
       useCORS: true,
-      backgroundColor: '#FAF7F1',
+      backgroundColor: '#F7F7F5',
       logging: false,
       ignoreElements: (element) => element.classList?.contains('report-no-pdf'),
     });

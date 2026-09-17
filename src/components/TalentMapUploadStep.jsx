@@ -79,7 +79,7 @@ function GradeBadge({ gradeSource }) {
         display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
         padding: '0.15rem 0.5rem', borderRadius: 999, marginLeft: '0.5rem',
         fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap',
-        background: 'rgba(226, 145, 71, 0.14)', color: 'var(--color-accent-hover)',
+        background: 'rgba(232, 163, 61, 0.14)', color: 'var(--color-warning)',
       }}
     >
       <AlertTriangle size={11} strokeWidth={2} />
@@ -193,7 +193,7 @@ function TalentMapUploadStep({ employees, assignments, gradeTargets, onSaveEmplo
                     key={emp.id}
                     style={{
                       borderBottom: '1px solid var(--color-border)',
-                      background: emp.gradeSource === 'suggested' ? 'rgba(226, 145, 71, 0.05)' : 'transparent',
+                      background: emp.gradeSource === 'suggested' ? 'rgba(232, 163, 61, 0.06)' : 'transparent',
                     }}
                   >
                     <td style={tdStyle}>{emp.fio}</td>
@@ -367,7 +367,7 @@ function AddEmployeeSection({ employees, assignments, onSaveEmployees }) {
       {preview && (
         <div style={{
           marginTop: '0.5rem', padding: '0.9rem 1rem', borderRadius: 'var(--radius-card)',
-          background: 'rgba(91, 140, 110, 0.08)', border: '1px solid var(--color-border)',
+          background: 'var(--color-primary-tint)', border: '1px solid var(--color-border)',
         }}>
           <div style={{ fontSize: '0.88rem', marginBottom: '0.6rem' }}>
             Будет добавлен: <strong>{preview.candidate.fio}</strong> ({preview.candidate.email})

@@ -3,10 +3,11 @@ import { Sparkles, RefreshCw, Download } from 'lucide-react';
 import { TALENT_COMPETENCIES } from '../talentCompetencies';
 
 const BRAND = {
-  primary: '#2F4A3E',
-  accent: '#E29147',
-  cream: '#FAF7F1',
-  muted: '#8A7E6B',
+  primary: '#1E9E70',
+  accent: '#E8A33D',
+  pink: '#D2649A',
+  cream: '#F7F7F5',
+  muted: '#767671',
 };
 
 function fmt(n) {
@@ -23,7 +24,7 @@ function isStructuredIdp(data) {
 
 function IdpPlanTable({ plan }) {
   return (
-    <div style={{ background: '#fff', borderRadius: '10px', overflow: 'hidden', border: '1px solid #E5DFD3', overflowX: 'auto' }}>
+    <div style={{ background: '#fff', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '12px' }}>
         <colgroup>
           <col style={{ width: '20%' }} />
@@ -56,10 +57,10 @@ function IdpPlanTable({ plan }) {
 
 const idpThStyle = { padding: '9px 10px', textAlign: 'left', verticalAlign: 'top', color: BRAND.cream, fontSize: '12px', fontWeight: 700 };
 const idpTdStyle = {
-  padding: '8px 10px', textAlign: 'left', verticalAlign: 'top', color: '#2B2620', fontSize: '12px',
-  lineHeight: 1.5, borderBottom: '1px solid #E5DFD3', overflowWrap: 'break-word', wordBreak: 'break-word',
+  padding: '8px 10px', textAlign: 'left', verticalAlign: 'top', color: 'var(--color-text-primary)', fontSize: '12px',
+  lineHeight: 1.5, borderBottom: '1px solid var(--color-border)', overflowWrap: 'break-word', wordBreak: 'break-word',
 };
-const idpSubheadingStyle = { fontFamily: "'Fraunces', Georgia, serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' };
+const idpSubheadingStyle = { fontFamily: "'Inter', sans-serif", color: '#fff', fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' };
 
 function IdpPlanView({ data }) {
   const growthAreas = Array.isArray(data.growthAreas) ? data.growthAreas : [];
@@ -202,13 +203,13 @@ function TalentMapIdpDetail({ evaluee, currentUser, finalAssessment, existingPla
       <div
         ref={reportRef}
         style={{
-          fontFamily: "'Plus Jakarta Sans', sans-serif", color: '#2B2620', background: BRAND.cream,
+          fontFamily: "'Inter', sans-serif", color: 'var(--color-text-primary)', background: BRAND.cream,
           borderRadius: 'var(--radius-card)', overflow: 'hidden', border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-card)',
         }}
       >
         <div style={{ background: BRAND.primary, padding: '2rem 2.25rem' }}>
-          <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", color: '#fff', fontSize: '1.7rem', fontWeight: 700, margin: '0 0 0.45rem' }}>
+          <h1 style={{ fontFamily: "'Inter', sans-serif", color: '#fff', fontSize: '1.7rem', fontWeight: 700, margin: '0 0 0.45rem' }}>
             Индивидуальный план развития
           </h1>
           <div style={{ color: 'rgba(250,247,241,0.82)', fontSize: '0.95rem' }}>
@@ -241,10 +242,10 @@ function TalentMapIdpDetail({ evaluee, currentUser, finalAssessment, existingPla
 
           <div style={{ padding: '1.5rem', borderRadius: 'var(--radius-card)', background: BRAND.primary, color: '#fff' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem' }}>
-              <span style={{ background: BRAND.accent, color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px', letterSpacing: '0.04em' }}>
+              <span style={{ background: BRAND.pink, color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px', letterSpacing: '0.04em' }}>
                 AI
               </span>
-              <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", margin: 0, fontSize: '1.15rem' }}>План развития</h3>
+              <h3 style={{ fontFamily: "'Inter', sans-serif", margin: 0, fontSize: '1.15rem' }}>План развития</h3>
             </div>
 
             {!plan && (
@@ -271,7 +272,7 @@ function TalentMapIdpDetail({ evaluee, currentUser, finalAssessment, existingPla
                   cursor: 'pointer', padding: 0, textDecoration: 'underline', opacity: generating ? 0.6 : 1,
                   display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
                 } : {
-                  background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
+                  background: '#fff', color: BRAND.primary, border: 'none', borderRadius: 'var(--radius-btn)',
                   padding: '0.55rem 1.15rem', fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer',
                   opacity: generating ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                 }}

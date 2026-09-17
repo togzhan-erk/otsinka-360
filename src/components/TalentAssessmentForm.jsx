@@ -156,7 +156,7 @@ function TalentAssessmentForm({ token, taskId, evalueeName, type, competencies, 
             onClick={onBack}
             style={{
               background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer',
-              fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, padding: 0,
+              fontSize: '0.9rem', fontFamily: "'Inter', sans-serif", fontWeight: 500, padding: 0,
               marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
             }}
           >

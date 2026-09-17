@@ -29,6 +29,10 @@ const BASE_STEPS = [
   { key: 'idp', number: 7, title: 'План развития' },
 ];
 
+// Exported so the AdminDashboard sidebar can render these same steps as its
+// "Карта талантов" submenu — single source of truth for the step list.
+export const TALENT_MAP_BASE_STEPS = BASE_STEPS;
+
 // Карта талантов — отдельный инструмент. Доступ = суперадмин ИЛИ email из
 // allowedEmails на самом документе карты (проверяется в AdminDashboard.jsx
 // перед рендером этого компонента — там же решается, показывать ли пункт
@@ -45,9 +49,8 @@ const BASE_STEPS = [
 // на сервере по мере того, как оценивающие заполняют форму по своим
 // личным ссылкам (api/talent.mjs, action=save-task), и экран
 // «Распределение» должен отражать это без ручного обновления страницы.
-function TalentMapTab({ currentUser }) {
+function TalentMapTab({ currentUser, step }) {
   const isSuperadminUser = isSuperadmin(currentUser);
-  const [step, setStep] = useState('upload');
   const [employees, setEmployees] = useState([]);
   const [gradeTargets, setGradeTargets] = useState(DEFAULT_GRADE_TARGETS);
   const [assignments, setAssignments] = useState([]);
@@ -199,30 +202,14 @@ function TalentMapTab({ currentUser }) {
   const steps = isSuperadminUser
     ? [...BASE_STEPS, { key: 'access', number: 8, title: 'Доступ' }]
     : BASE_STEPS;
+  const currentStepTitle = steps.find(s => s.key === step)?.title || '';
 
   return (
     <div>
-      <h3 style={{ margin: 0 }}>Карта талантов</h3>
+      <h3 style={{ margin: 0 }}>Карта талантов{currentStepTitle ? ` · ${currentStepTitle}` : ''}</h3>
       <p style={{ margin: '0.35rem 0 1.5rem', color: 'var(--color-text-muted)' }}>
         Отдельный инструмент оценки по грейдам и модели компетенций — не связан с опросами 360.
       </p>
-
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-        {steps.map(s => (
-          <button
-            key={s.key}
-            onClick={() => setStep(s.key)}
-            className="btn btn-sm"
-            style={{
-              background: step === s.key ? 'var(--color-primary)' : 'transparent',
-              color: step === s.key ? '#fff' : 'var(--color-text-muted)',
-              border: `1.5px solid ${step === s.key ? 'var(--color-primary)' : 'var(--color-border)'}`,
-            }}
-          >
-            {s.number}. {s.title}
-          </button>
-        ))}
-      </div>
 
       {loading && <p style={{ color: 'var(--color-text-muted)' }}>Загрузка...</p>}
       {error && <div className="error-message">Ошибка загрузки карты талантов: {error}</div>}

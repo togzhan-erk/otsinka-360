@@ -10,9 +10,9 @@ const TYPE_LABELS = {
 
 const STATUS_LABELS = { not_started: 'Не начата', in_progress: 'В процессе', completed: 'Завершена' };
 const STATUS_STYLE = {
-  not_started: { color: '#B42318', bg: '#FCE8E6' },
-  in_progress: { color: '#8A5A22', bg: 'rgba(226, 145, 71, 0.14)' },
-  completed: { color: 'var(--color-success)', bg: 'rgba(91, 140, 110, 0.14)' },
+  not_started: { color: 'var(--color-danger)', bg: '#FBEAEA' },
+  in_progress: { color: 'var(--color-warning)', bg: 'rgba(232, 163, 61, 0.14)' },
+  completed: { color: 'var(--color-success)', bg: 'var(--color-primary-tint)' },
 };
 
 const thStyle = {
@@ -110,7 +110,7 @@ function TalentMapProgressStep({ employees, assignments }) {
                   key={a.id}
                   style={{
                     borderBottom: '1px solid var(--color-border)',
-                    background: incomplete ? 'rgba(226, 145, 71, 0.06)' : 'transparent',
+                    background: incomplete ? 'rgba(232, 163, 61, 0.08)' : 'transparent',
                     borderLeft: incomplete ? '3px solid var(--color-accent)' : '3px solid transparent',
                   }}
                 >

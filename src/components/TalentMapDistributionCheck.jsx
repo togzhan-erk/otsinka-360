@@ -30,7 +30,7 @@ function AxisStatsTable({ title, stats }) {
             <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
               {TALENT_BAND_LABELS[band]}
             </div>
-            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '1.6rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: 'var(--color-primary)', lineHeight: 1 }}>
               {stats.pct[band]}%
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.3rem' }}>
@@ -43,10 +43,10 @@ function AxisStatsTable({ title, stats }) {
       {stats.skewed.length > 0 && (
         <div style={{
           display: 'flex', alignItems: 'flex-start', gap: '0.5rem', padding: '0.7rem 0.9rem',
-          background: 'rgba(226, 145, 71, 0.12)', border: '1px solid rgba(226, 145, 71, 0.4)', borderRadius: '10px',
+          background: 'rgba(232, 163, 61, 0.12)', border: '1px solid rgba(232, 163, 61, 0.4)', borderRadius: '10px',
           fontSize: '0.82rem', color: 'var(--color-text)', lineHeight: 1.45,
         }}>
-          <AlertTriangle size={14} strokeWidth={2} style={{ color: 'var(--color-accent-hover)', flexShrink: 0, marginTop: '0.1rem' }} />
+          <AlertTriangle size={14} strokeWidth={2} style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: '0.1rem' }} />
           <span>
             Перекос по «{stats.skewed.map(b => TALENT_BAND_LABELS[b]).join('», «')}» — стоит проверить на калибровке.
           </span>

@@ -36,9 +36,9 @@ export const ZONE_LABELS = { green: 'Зелёная', yellow: 'Жёлтая', re
 // импорт — зона квадранта и полоса оценки концептуально разные вещи,
 // совпадение цветов чисто визуальное).
 export const ZONE_STYLE = {
-  green: { bg: 'rgba(91, 140, 110, 0.14)', border: 'rgba(91, 140, 110, 0.4)', text: 'var(--color-success)' },
-  yellow: { bg: 'rgba(226, 145, 71, 0.14)', border: 'rgba(226, 145, 71, 0.45)', text: 'var(--color-accent-hover)' },
-  red: { bg: '#FCE8E6', border: 'rgba(180, 35, 24, 0.35)', text: '#B42318' },
+  green: { bg: 'var(--color-primary-tint)', border: 'rgba(30, 158, 112, 0.4)', text: 'var(--color-success)' },
+  yellow: { bg: 'rgba(232, 163, 61, 0.14)', border: 'rgba(232, 163, 61, 0.45)', text: 'var(--color-warning)' },
+  red: { bg: '#FBEAEA', border: 'rgba(209, 67, 67, 0.35)', text: 'var(--color-danger)' },
 };
 
 export function quadrantKey(yBand, xBand) {

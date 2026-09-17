@@ -14,11 +14,12 @@ const MIN_RATERS_FOR_REPORT = 3;
 const BLIND_SPOT_THRESHOLD = 0.7;
 
 const BRAND = {
-  primary: '#2F4A3E',
-  leaf: '#3F6152',
-  accent: '#E29147',
-  cream: '#FAF7F1',
-  muted: '#8A7E6B',
+  primary: '#1E9E70',
+  leaf: '#1E9E70',
+  accent: '#E8A33D',
+  pink: '#D2649A',
+  cream: '#F7F7F5',
+  muted: '#767671',
 };
 
 // Maps both English keys and Russian labels to canonical Russian labels
@@ -246,7 +247,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
           style={{
             background: 'none', border: 'none',
             color: BRAND.muted, cursor: 'pointer',
-            fontSize: '0.9rem', fontFamily: "'Plus Jakarta Sans', sans-serif",
+            fontSize: '0.9rem', fontFamily: "'Inter', sans-serif",
             fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem',
             marginBottom: '1.25rem',
           }}
@@ -259,8 +260,8 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
         <div
           ref={reportRef}
           style={{
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            color: '#2B2620',
+            fontFamily: "'Inter', sans-serif",
+            color: 'var(--color-text-primary)',
             background: BRAND.cream,
             borderRadius: 'var(--radius-card)',
             overflow: 'hidden',
@@ -276,16 +277,16 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
           }}>
             <div>
               <h1 style={{
-                fontFamily: "'Fraunces', Georgia, serif", color: '#fff',
+                fontFamily: "'Inter', sans-serif", color: '#fff',
                 fontSize: '1.85rem', fontWeight: 700, margin: '0 0 0.45rem',
               }}>
                 Индивидуальный отчёт 360°
               </h1>
-              <div style={{ color: 'rgba(250,247,241,0.82)', fontSize: '0.95rem' }}>
+              <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: '0.95rem' }}>
                 {[employeeName, department, cycleName].filter(Boolean).join(' · ')}
               </div>
             </div>
-            <LogoIcon style={{ width: 56, height: 56, flexShrink: 0 }} />
+            <LogoIcon style={{ fontSize: '1.8rem', color: '#fff', flexShrink: 0 }} />
           </div>
 
           <div style={{ padding: '2.25rem' }}>
@@ -320,7 +321,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                 {blindSpot && (
                   <div style={{
                     marginTop: '1.5rem', padding: '1rem 1.25rem', borderRadius: '10px',
-                    background: '#FCEBD9', border: `1px solid ${BRAND.accent}55`,
+                    background: '#FCF1DF', border: `1px solid ${BRAND.accent}55`,
                   }}>
                     <strong style={{ color: BRAND.primary }}>Возможная слепая зона:</strong>{' '}
                     «{blindSpot.name}» — самооценка ({fmt(blindSpot.selfAvg)}) заметно выше оценки команды ({fmt(blindSpot.teamAvg)}).
@@ -353,12 +354,12 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem' }}>
                     <span style={{
-                      background: BRAND.accent, color: '#fff', fontSize: '0.7rem', fontWeight: 700,
+                      background: BRAND.pink, color: '#fff', fontSize: '0.7rem', fontWeight: 700,
                       padding: '0.2rem 0.55rem', borderRadius: '999px', letterSpacing: '0.04em',
                     }}>
                       AI
                     </span>
-                    <h3 style={{ fontFamily: "'Fraunces', Georgia, serif", margin: 0, fontSize: '1.15rem' }}>
+                    <h3 style={{ fontFamily: "'Inter', sans-serif", margin: 0, fontSize: '1.15rem' }}>
                       Индивидуальный план развития
                     </h3>
                   </div>
@@ -400,7 +401,7 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
                           opacity: iprGenerating ? 0.6 : 1,
                           display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
                         } : {
-                          background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
+                          background: '#fff', color: BRAND.primary, border: 'none', borderRadius: 'var(--radius-btn)',
                           padding: '0.55rem 1.15rem', fontSize: '0.88rem', fontWeight: 600,
                           cursor: 'pointer', opacity: iprGenerating ? 0.7 : 1,
                           display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
@@ -433,12 +434,12 @@ function EmployeeReport({ employeeName, feedbacks, competencies, department, cyc
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           marginTop: '1.25rem', flexWrap: 'wrap', gap: '0.75rem',
         }}>
-          <span style={{ fontSize: '0.8rem', color: BRAND.muted }}>Конфиденциально · Growth 360°</span>
+          <span style={{ fontSize: '0.8rem', color: BRAND.muted }}>Конфиденциально · bloomo</span>
           {hasEnoughData && (
             <button
               onClick={handleDownloadPDF}
               style={{
-                background: BRAND.accent, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
+                background: BRAND.primary, color: '#fff', border: 'none', borderRadius: 'var(--radius-btn)',
                 padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: '0.5rem',
               }}
@@ -501,7 +502,7 @@ function StatTile({ label, value, sub, small }) {
         {label}
       </div>
       <div style={{
-        fontFamily: "'Fraunces', Georgia, serif", color: BRAND.primary,
+        fontFamily: "'Inter', sans-serif", color: BRAND.primary,
         fontSize: small ? '1.3rem' : '2.4rem', fontWeight: 700, lineHeight: 1.2, marginBottom: sub ? '0.35rem' : 0,
       }}>
         {value}
@@ -514,7 +515,7 @@ function StatTile({ label, value, sub, small }) {
 function SectionTitle({ children }) {
   return (
     <h3 style={{
-      fontFamily: "'Fraunces', Georgia, serif",
+      fontFamily: "'Inter', sans-serif",
       color: BRAND.primary,
       fontSize: '1.1rem',
       margin: '2rem 0 1rem',
@@ -576,7 +577,7 @@ function CommentCard({ label, text, index }) {
       }}>
         {label}
       </div>
-      <div style={{ fontSize: '0.9rem', color: '#2B2620', lineHeight: 1.6 }}>
+      <div style={{ fontSize: '0.9rem', color: 'var(--color-text-primary)', lineHeight: 1.6 }}>
         {text}
       </div>
     </div>
@@ -618,7 +619,7 @@ function IprPlan({ data }) {
 }
 
 const iprSubheadingStyle = {
-  fontFamily: "'Fraunces', Georgia, serif",
+  fontFamily: "'Inter', sans-serif",
   color: '#fff',
   fontSize: '1rem',
   fontWeight: 600,
@@ -629,7 +630,7 @@ function IprPlanTable({ plan }) {
   return (
     <div style={{
       background: '#fff', borderRadius: '10px', overflow: 'hidden',
-      border: '1px solid #E5DFD3', overflowX: 'auto',
+      border: '1px solid var(--color-border)', overflowX: 'auto',
     }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '12px' }}>
         <colgroup>
@@ -674,10 +675,10 @@ const iprTdStyle = {
   padding: '8px 10px',
   textAlign: 'left',
   verticalAlign: 'top',
-  color: '#2B2620',
+  color: 'var(--color-text-primary)',
   fontSize: '12px',
   lineHeight: 1.5,
-  borderBottom: '1px solid #E5DFD3',
+  borderBottom: '1px solid var(--color-border)',
   overflowWrap: 'break-word',
   wordBreak: 'break-word',
 };

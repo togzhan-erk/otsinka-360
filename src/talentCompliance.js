@@ -41,9 +41,9 @@ export function isValidBandThresholds(thresholds) {
 // своих файлах по сложившейся в проекте практике), просто согласованный
 // внешний вид.
 export const TALENT_BAND_STYLE = {
-  [TALENT_BAND_BELOW]: { color: '#B42318', bg: '#FCE8E6' },
-  [TALENT_BAND_MATCH]: { color: 'var(--color-success)', bg: 'rgba(91, 140, 110, 0.14)' },
-  [TALENT_BAND_EXCEEDS]: { color: 'var(--color-accent-hover)', bg: 'rgba(226, 145, 71, 0.18)' },
+  [TALENT_BAND_BELOW]: { color: 'var(--color-danger)', bg: '#FBEAEA' },
+  [TALENT_BAND_MATCH]: { color: 'var(--color-success)', bg: 'var(--color-primary-tint)' },
+  [TALENT_BAND_EXCEEDS]: { color: 'var(--color-warning)', bg: 'rgba(232, 163, 61, 0.18)' },
 };
 
 // Балл по компетенции = среднее её 4 индикаторов; если хотя бы одного не

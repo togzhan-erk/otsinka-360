@@ -1,25 +1,42 @@
 :root {
-  /* Brand tokens — keep in sync with src/competencies.js's report BRAND
-     object and src/components/Logo.jsx's inline SVG fills. */
-  --color-bg: #FAF7F1;
-  --color-primary: #2F4A3E;
-  --color-leaf: #3F6152;
-  --color-surface: #FFFFFF;
-  --color-surface-tint: #EFF2E9;
-  --color-accent: #E29147;
-  --color-accent-hover: #C97D38;
-  --color-success: #5B8C6E;
-  --color-success-hover: #4A7A5D;
-  --color-danger: #C15B4A;
-  --color-danger-hover: #A84939;
-  --color-text: #2B2B2B;
-  --color-text-muted: #8A7E6B;
-  --color-border: #E5DFD3;
+  /* ─── Bloomo design tokens — single source of truth ───────────────────────
+     Every component reads colors through these variables (or through the
+     legacy aliases below, kept so existing var(--color-text-muted) etc.
+     call sites across the app don't need to be rewritten one by one).
+     Change the palette here only. */
+  --color-primary: #1E9E70;
+  --color-primary-tint: #E6F5EE;
+  --color-accent-pink: #D2649A;
+  --color-accent-pink-tint: #FBEAF2;
+  --color-warning: #E8A33D;
+  --color-text-primary: #1A1A1A;
+  --color-text-secondary: #767671;
+  --color-border: #E5E5E2;
+  --color-bg-app: #F7F7F5;
+  --color-bg-surface: #FFFFFF;
+  --color-danger: #D14343;
+  --color-danger-hover: #B93838;
+  --color-hover-tint: #F2F2F0;
+
+  /* ─── Legacy aliases ────────────────────────────────────────────────────
+     Older components/CSS still reference these names — mapped onto the
+     tokens above so the whole app repaints from one palette. */
+  --color-bg: var(--color-bg-app);
+  --color-surface: var(--color-bg-surface);
+  --color-surface-tint: var(--color-bg-app);
+  --color-leaf: var(--color-primary);
+  --color-accent: var(--color-primary);
+  --color-accent-hover: #178A5F;
+  --color-success: var(--color-primary);
+  --color-success-hover: #178A5F;
+  --color-text: var(--color-text-primary);
+  --color-text-muted: var(--color-text-secondary);
+
   --radius-card: 12px;
-  --radius-btn: 8px;
+  --radius-btn: 12px;
   --radius-input: 10px;
-  --shadow-card: 0 1px 3px rgba(43, 38, 32, 0.06);
-  --shadow-hover: 0 6px 20px rgba(43, 38, 32, 0.1);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.06);
   --space-1: 8px;
   --space-2: 16px;
   --space-3: 24px;
@@ -34,17 +51,17 @@
 }
 
 body {
-  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
   line-height: 1.6;
 }
 
 h1, h2, h3, h4 {
-  font-family: 'Fraunces', Georgia, serif;
-  font-weight: 600;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-weight: 700;
   line-height: 1.25;
 }
 
