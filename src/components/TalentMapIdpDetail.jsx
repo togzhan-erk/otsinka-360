@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Sparkles, RefreshCw, Download } from 'lucide-react';
 import { TALENT_COMPETENCIES } from '../talentCompetencies';
+import { getAssessmentTargetScore } from '../talentCompliance';
 
 const BRAND = {
   primary: '#1E9E70',
@@ -98,13 +99,13 @@ function IdpPlanView({ data }) {
 // квадранта 9-box, полос «Проблема»/«Резерв» или статуса пула (это видно
 // только суперадмину в под-шаге «Карта талантов», сюда не передаётся вовсе
 // — компонент физически не получает эти данные как props).
-function TalentMapIdpDetail({ evaluee, currentUser, finalAssessment, existingPlan, onSavePlan }) {
+function TalentMapIdpDetail({ evaluee, currentUser, gradeTargets, finalAssessment, existingPlan, onSavePlan }) {
   const reportRef = useRef(null);
   const [plan, setPlan] = useState(existingPlan || null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
 
-  const target = finalAssessment?.targetScore ?? null;
+  const target = getAssessmentTargetScore(finalAssessment, gradeTargets, evaluee.grade);
   const compRows = TALENT_COMPETENCIES.map(comp => {
     const score = finalAssessment?.competencyAverages?.[comp.id] ?? null;
     return { id: comp.id, name: comp.name, score, gap: (score !== null && target) ? score - target : null };

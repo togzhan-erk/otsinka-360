@@ -113,16 +113,31 @@ export function computeBand(complianceIndexPct, thresholds = DEFAULT_BAND_THRESH
   return TALENT_BAND_EXCEEDS;
 }
 
+// Целевой балл и индекс соответствия для уже сохранённой финальной оценки
+// считаются на лету из assessment.overallAverage и ТЕКУЩЕЙ таблицы
+// gradeTargets — сохранённые assessment.targetScore/complianceIndex/band
+// зафиксированы на момент последнего сохранения баллов и не обновляются при
+// правке таблицы грейдов, поэтому для отображения не используются. grade —
+// текущий грейд сотрудника из списка employees; если он не задан, берётся
+// грейд, записанный в оценку при сохранении.
+export function getAssessmentTargetScore(assessment, gradeTargets, grade) {
+  return getGradeTarget(gradeTargets, grade || assessment?.grade || null);
+}
+
+export function getAssessmentComplianceIndex(assessment, gradeTargets, grade) {
+  if (!assessment) return null;
+  return computeComplianceIndex(assessment.overallAverage, getAssessmentTargetScore(assessment, gradeTargets, grade));
+}
+
 // Ручное переопределение (решение калибровочного комитета) побеждает
-// расчётную полосу. Полоса пересчитывается динамически из уже сохранённого
-// complianceIndex и ТЕКУЩИХ порогов — не читается напрямую из assessment.band
-// (который зафиксирован на момент последнего сохранения баллов), поэтому
-// изменение порогов сразу отражается на всех ранее внесённых финальных
-// баллах, без необходимости пересохранять их. Используется и здесь для
-// отображения, и Фазой 5 при сборке карты 9-box (ось X приходит уже готовой
-// отсюда).
-export function getEffectiveBand(assessment, thresholds = DEFAULT_BAND_THRESHOLDS) {
+// расчётную полосу. Иначе полоса пересчитывается динамически из
+// overallAverage, ТЕКУЩЕЙ таблицы gradeTargets и ТЕКУЩИХ порогов, поэтому
+// изменение таблицы грейдов или порогов сразу отражается на всех ранее
+// внесённых финальных баллах, без необходимости пересохранять их.
+// Используется и здесь для отображения, и Фазой 5 при сборке карты 9-box
+// (ось X приходит уже готовой отсюда).
+export function getEffectiveBand(assessment, gradeTargets, grade, thresholds = DEFAULT_BAND_THRESHOLDS) {
   if (!assessment) return null;
   if (assessment.manualOverrideBand) return assessment.manualOverrideBand;
-  return computeBand(assessment.complianceIndex, thresholds);
+  return computeBand(getAssessmentComplianceIndex(assessment, gradeTargets, grade), thresholds);
 }

@@ -266,6 +266,7 @@ function TalentMapTab({ currentUser, step }) {
         <TalentMapNineBoxStep
           employees={employees}
           assignments={assignments}
+          gradeTargets={gradeTargets}
           bandThresholds={bandThresholds}
           finalAssessments={finalAssessments}
           yAxisAssessments={yAxisAssessments}
@@ -282,6 +283,7 @@ function TalentMapTab({ currentUser, step }) {
           employees={employees}
           assignments={assignments}
           currentUser={currentUser}
+          gradeTargets={gradeTargets}
           finalAssessments={finalAssessments}
           idpPlans={idpPlans}
           onSavePlan={persistIdpPlan}

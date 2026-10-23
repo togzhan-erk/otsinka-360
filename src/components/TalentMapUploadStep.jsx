@@ -505,7 +505,8 @@ function GradeTargetsEditor({ gradeTargets, onSave }) {
 // эти два числа только параметризуют пороги, ничего не считают сами).
 // Меняя их здесь, суперадмин сразу пересчитывает полосу оси X у всех уже
 // внесённых финальных баллов — getEffectiveBand() всегда читает текущие
-// пороги, а не то, что было сохранено на момент ввода баллов.
+// пороги и текущую таблицу целевых баллов, а не то, что было сохранено на
+// момент ввода баллов.
 function BandThresholdsEditor({ bandThresholds, onSave }) {
   const initial = bandThresholds || DEFAULT_BAND_THRESHOLDS;
   const [lower, setLower] = useState(String(initial.lower));

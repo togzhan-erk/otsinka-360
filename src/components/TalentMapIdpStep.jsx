@@ -37,7 +37,7 @@ function fmt(n) {
 // внесены финальные баллы (Фаза 4); без них план развития строить не на
 // чем. Открытие сотрудника показывает TalentMapIdpDetail — баллы по
 // компетенциям, AI-план и его PDF (без ярлыков карты 9-box).
-function TalentMapIdpStep({ employees, assignments, currentUser, finalAssessments, idpPlans, onSavePlan }) {
+function TalentMapIdpStep({ employees, assignments, currentUser, gradeTargets, finalAssessments, idpPlans, onSavePlan }) {
   const [openId, setOpenId] = useState(null);
 
   const pairs = buildPairs(employees, assignments).filter(p => finalAssessments?.[p.evalueeId]);
@@ -64,6 +64,7 @@ function TalentMapIdpStep({ employees, assignments, currentUser, finalAssessment
         <TalentMapIdpDetail
           evaluee={pair.evaluee}
           currentUser={currentUser}
+          gradeTargets={gradeTargets}
           finalAssessment={finalAssessments[openId]}
           existingPlan={idpPlans?.[openId] || null}
           onSavePlan={onSavePlan}

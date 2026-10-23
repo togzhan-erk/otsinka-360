@@ -63,10 +63,10 @@ function CellCard({ quadrant, employees }) {
 
 // Под-шаг «Карта талантов» (Фаза 5a) — ручная ось Y (KPI), карта 9-box,
 // редактируемые ячейки, пулы талантов и проверка распределения. Ось X
-// приходит готовой из Фазы 4 (talentMaps.finalAssessments), ничего не
-// пересчитывает заново.
+// строится из финальных баллов Фазы 4 (talentMaps.finalAssessments) и
+// текущей таблицы gradeTargets через getEffectiveBand.
 function TalentMapNineBoxStep({
-  employees, assignments, bandThresholds,
+  employees, assignments, gradeTargets, bandThresholds,
   finalAssessments, yAxisAssessments, quadrants, talentPoolOverrides,
   onSaveYAxis, onSaveQuadrants, onSavePoolOverride,
 }) {
@@ -76,7 +76,7 @@ function TalentMapNineBoxStep({
   const pairs = buildPairs(employees, assignments);
 
   const placement = pairs.map(p => {
-    const xBand = getEffectiveBand(finalAssessments?.[p.evalueeId] || null, bandThresholds);
+    const xBand = getEffectiveBand(finalAssessments?.[p.evalueeId] || null, gradeTargets, p.evaluee.grade, bandThresholds);
     const yBand = computeEffectiveYBand(yAxisAssessments?.[p.evalueeId] || null, bandThresholds);
     return { ...p, xBand, yBand };
   });

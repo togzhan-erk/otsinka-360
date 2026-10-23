@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { TALENT_ASSIGNMENT_SELF, TALENT_ASSIGNMENT_MANAGER } from '../talentAssignments';
-import { getGradeTarget, getEffectiveBand, TALENT_BAND_LABELS, TALENT_BAND_STYLE } from '../talentCompliance';
+import { getGradeTarget, getEffectiveBand, getAssessmentComplianceIndex, TALENT_BAND_LABELS, TALENT_BAND_STYLE } from '../talentCompliance';
 import TalentMapFinalScoreForm from './TalentMapFinalScoreForm';
 
 // Тот же способ построить пары «оцениваемый + его руководитель» из
@@ -123,15 +123,16 @@ function TalentMapFinalScoresStep({ employees, assignments, gradeTargets, bandTh
             {pairs.map(pair => {
               const assessment = finalAssessments?.[pair.evalueeId] || null;
               const entered = !!assessment;
-              const effectiveBand = getEffectiveBand(assessment, bandThresholds);
+              const effectiveBand = getEffectiveBand(assessment, gradeTargets, pair.evaluee.grade, bandThresholds);
               const targetScore = getGradeTarget(gradeTargets, pair.evaluee.grade);
+              const complianceIndex = getAssessmentComplianceIndex(assessment, gradeTargets, pair.evaluee.grade);
               return (
                 <tr key={pair.evalueeId} style={{ borderBottom: '1px solid var(--color-border)' }}>
                   <td style={tdStyle}>{pair.evaluee.fio}</td>
                   <td style={tdStyle}>{pair.evaluee.grade || '—'}</td>
                   <td style={tdStyle}>{targetScore !== null ? fmt(targetScore) : '—'}</td>
                   <td style={tdStyle}>{entered ? fmt(assessment.overallAverage) : '—'}</td>
-                  <td style={tdStyle}>{entered && assessment.complianceIndex !== null ? `${assessment.complianceIndex}%` : '—'}</td>
+                  <td style={tdStyle}>{complianceIndex !== null ? `${complianceIndex}%` : '—'}</td>
                   <td style={tdStyle}>
                     <BandBadge band={effectiveBand} />
                     {assessment?.manualOverrideBand && (
