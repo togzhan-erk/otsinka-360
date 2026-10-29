@@ -82,11 +82,12 @@ function sortByAverage(a, b) {
   return b.overallAverage - a.overallAverage || a.fio.localeCompare(b.fio, 'ru');
 }
 
-// Шаг «Итоги по оси X» — предварительный отчёт, пока нет KPI (оси Y):
+// Раскрывающийся раздел «Предварительный отчёт по оси X» внутри шага
+// «Карта талантов» (TalentMapNineBoxStep.jsx) — пока нет KPI (оси Y):
 // итоги по грейдам, предварительная карта «грейд × полоса X», положение
 // внутри грейда и кандидаты в Резерв 1/2 по всем 7 компетенциям. Только
 // чтение: ничего не пишет в Firestore, не меняет оси и пулы.
-function TalentMapXReportStep({ employees, assignments, gradeTargets, bandThresholds, finalAssessments }) {
+function TalentMapXReport({ employees, assignments, gradeTargets, bandThresholds, finalAssessments }) {
   const reportRef = useRef(null);
   const [rules, setRules] = useState(DEFAULT_RESERVE_RULES);
   const [showAll, setShowAll] = useState(false);
@@ -445,11 +446,11 @@ function TalentMapXReportStep({ employees, assignments, gradeTargets, bandThresh
       <div className="report-no-pdf" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1.75rem' }}>
         <button className="btn btn-secondary" onClick={handleDownloadExcel}>
           <FileSpreadsheet size={16} strokeWidth={2} />
-          Скачать Excel
+          Скачать отчёт по оси X (Excel)
         </button>
         <button className="btn btn-accent" onClick={handleDownloadPdf}>
           <Download size={16} strokeWidth={2} />
-          Скачать PDF
+          Скачать отчёт по оси X (PDF)
         </button>
       </div>
     </div>
@@ -460,4 +461,4 @@ function round2(v) {
   return typeof v === 'number' && !Number.isNaN(v) ? Math.round(v * 100) / 100 : '';
 }
 
-export default TalentMapXReportStep;
+export default TalentMapXReport;

@@ -10,6 +10,7 @@ import TalentMapYAxisEditor from './TalentMapYAxisEditor';
 import TalentMapQuadrantEditor from './TalentMapQuadrantEditor';
 import TalentMapTalentPools from './TalentMapTalentPools';
 import TalentMapDistributionCheck from './TalentMapDistributionCheck';
+import TalentMapXReport from './TalentMapXReport';
 
 // Тот же способ построить пары «оцениваемый + его руководитель» из
 // сохранённых assignments, что TalentMapPairReportsStep.jsx/
@@ -81,6 +82,11 @@ function TalentMapNineBoxStep({
     return { ...p, xBand, yBand };
   });
 
+  // Пока ось Y не заполнена ни у кого, предварительный отчёт по оси X —
+  // единственное, что здесь можно посмотреть, поэтому он раскрыт сразу.
+  const yAxisEmpty = placement.length > 0 && placement.every(p => !p.yBand);
+  const [showXReport, setShowXReport] = useState(yAxisEmpty);
+
   const placed = placement.filter(p => p.xBand && p.yBand);
   const unplaced = placement.filter(p => !p.xBand || !p.yBand);
 
@@ -141,15 +147,37 @@ function TalentMapNineBoxStep({
         выберите полосу или укажите % выполнения плана, чтобы она посчиталась по тем же порогам, что и ось X.
       </p>
 
-      {placement.length > 0 && placement.every(p => !p.yBand) && (
+      {yAxisEmpty && (
         <div style={{
           marginBottom: '1.5rem', padding: '0.85rem 1.1rem', border: '1px solid rgba(232, 163, 61, 0.45)',
           background: 'rgba(232, 163, 61, 0.12)', borderRadius: 'var(--radius-card)', fontSize: '0.88rem', lineHeight: 1.5,
         }}>
-          Ось Y (KPI) пока не заполнена, поэтому на карте никого нет. Предварительный отчёт только по оси X
-          с кандидатами в резерв — в шаге «Итоги по оси X».
+          Ось Y (KPI) пока не заполнена, поэтому на карте никого нет. Ниже — предварительный отчёт только по оси X
+          с кандидатами в резерв.
         </div>
       )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.9rem' }}>
+        <h4 style={{ margin: 0 }}>Предварительный отчёт по оси X</h4>
+        <button className="btn btn-secondary btn-sm" onClick={() => setShowXReport(v => !v)}>
+          {showXReport ? 'Скрыть отчёт' : 'Показать отчёт'}
+        </button>
+      </div>
+      {showXReport && (
+        <div style={{
+          marginBottom: '2.5rem', padding: '1.25rem', border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-card)',
+        }}>
+          <TalentMapXReport
+            employees={employees}
+            assignments={assignments}
+            gradeTargets={gradeTargets}
+            bandThresholds={bandThresholds}
+            finalAssessments={finalAssessments}
+          />
+        </div>
+      )}
+      {!showXReport && <div style={{ marginBottom: '1.75rem' }} />}
 
       <h4 style={{ marginBottom: '0.75rem' }}>Ось Y — KPI</h4>
       <div style={{ marginBottom: '2.5rem' }}>
