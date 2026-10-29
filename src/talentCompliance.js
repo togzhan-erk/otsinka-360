@@ -6,6 +6,7 @@
 // talentMaps/main полями gradeTargets и bandThresholds).
 
 import { TALENT_COMPETENCIES } from './talentCompetencies';
+import { normalizeGrade } from './talentGrades';
 
 export const TALENT_BAND_BELOW = 'below';
 export const TALENT_BAND_MATCH = 'match';
@@ -73,7 +74,8 @@ export function computeOverallAverage(competencyAverages) {
 
 export function getGradeTarget(gradeTargets, grade) {
   if (!grade) return null;
-  const entry = (gradeTargets || []).find(g => g.grade === grade);
+  const key = normalizeGrade(grade);
+  const entry = (gradeTargets || []).find(g => normalizeGrade(g.grade) === key);
   return entry ? entry.target : null;
 }
 

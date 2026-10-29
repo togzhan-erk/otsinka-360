@@ -15,6 +15,7 @@ import TalentMapDistributionStep from './TalentMapDistributionStep';
 import TalentMapProgressStep from './TalentMapProgressStep';
 import TalentMapPairReportsStep from './TalentMapPairReportsStep';
 import TalentMapFinalScoresStep from './TalentMapFinalScoresStep';
+import TalentMapXReportStep from './TalentMapXReportStep';
 import TalentMapNineBoxStep from './TalentMapNineBoxStep';
 import TalentMapIdpStep from './TalentMapIdpStep';
 import TalentMapAccessPanel from './TalentMapAccessPanel';
@@ -25,8 +26,9 @@ const BASE_STEPS = [
   { key: 'progress', number: 3, title: 'Прохождение' },
   { key: 'pairReports', number: 4, title: 'Отчёты по парам' },
   { key: 'finalScores', number: 5, title: 'Согласованные баллы' },
-  { key: 'nineBox', number: 6, title: 'Карта талантов' },
-  { key: 'idp', number: 7, title: 'План развития' },
+  { key: 'xReport', number: 6, title: 'Итоги по оси X' },
+  { key: 'nineBox', number: 7, title: 'Карта талантов' },
+  { key: 'idp', number: 8, title: 'План развития' },
 ];
 
 // Exported so the AdminDashboard sidebar can render these same steps as its
@@ -200,7 +202,7 @@ function TalentMapTab({ currentUser, step }) {
   };
 
   const steps = isSuperadminUser
-    ? [...BASE_STEPS, { key: 'access', number: 8, title: 'Доступ' }]
+    ? [...BASE_STEPS, { key: 'access', number: 9, title: 'Доступ' }]
     : BASE_STEPS;
   const currentStepTitle = steps.find(s => s.key === step)?.title || '';
 
@@ -259,6 +261,16 @@ function TalentMapTab({ currentUser, step }) {
           bandThresholds={bandThresholds}
           finalAssessments={finalAssessments}
           onSaveFinalAssessment={persistFinalAssessment}
+        />
+      )}
+
+      {!loading && !error && step === 'xReport' && (
+        <TalentMapXReportStep
+          employees={employees}
+          assignments={assignments}
+          gradeTargets={gradeTargets}
+          bandThresholds={bandThresholds}
+          finalAssessments={finalAssessments}
         />
       )}
 

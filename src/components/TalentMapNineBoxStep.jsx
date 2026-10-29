@@ -141,6 +141,16 @@ function TalentMapNineBoxStep({
         выберите полосу или укажите % выполнения плана, чтобы она посчиталась по тем же порогам, что и ось X.
       </p>
 
+      {placement.length > 0 && placement.every(p => !p.yBand) && (
+        <div style={{
+          marginBottom: '1.5rem', padding: '0.85rem 1.1rem', border: '1px solid rgba(232, 163, 61, 0.45)',
+          background: 'rgba(232, 163, 61, 0.12)', borderRadius: 'var(--radius-card)', fontSize: '0.88rem', lineHeight: 1.5,
+        }}>
+          Ось Y (KPI) пока не заполнена, поэтому на карте никого нет. Предварительный отчёт только по оси X
+          с кандидатами в резерв — в шаге «Итоги по оси X».
+        </div>
+      )}
+
       <h4 style={{ marginBottom: '0.75rem' }}>Ось Y — KPI</h4>
       <div style={{ marginBottom: '2.5rem' }}>
         <TalentMapYAxisEditor
