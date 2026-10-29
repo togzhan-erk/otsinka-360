@@ -41,6 +41,22 @@ function TalentMapYAxisEditor({ pairs, bandThresholds, yAxisAssessments, onSave 
     onSave(evalueeId, { manualBand: existing.manualBand ?? null, kpiPercent });
   };
 
+  // Сброс оси Y у всех оцениваемых из таблицы — тем же onSave, по одному
+  // вызову на сотрудника, последовательно.
+  const [clearing, setClearing] = useState(false);
+  const handleClearAll = async () => {
+    if (!window.confirm('Удалить значения оси Y у всех сотрудников?')) return;
+    setClearing(true);
+    setKpiDrafts({});
+    try {
+      for (const p of pairs) {
+        await onSave(p.evalueeId, { manualBand: null, kpiPercent: null });
+      }
+    } finally {
+      setClearing(false);
+    }
+  };
+
   if (pairs.length === 0) {
     return (
       <p style={{ color: 'var(--color-text-muted)' }}>
@@ -50,59 +66,66 @@ function TalentMapYAxisEditor({ pairs, bandThresholds, yAxisAssessments, onSave 
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-            <th style={thStyle}>ФИО</th>
-            <th style={thStyle}>Полоса X</th>
-            <th style={thStyle}>Полоса Y (вручную)</th>
-            <th style={thStyle}>KPI, % плана</th>
-            <th style={thStyle}>Эффективная Y</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pairs.map(p => {
-            const yAssessment = yAxisAssessments?.[p.evalueeId] || null;
-            const effectiveY = computeEffectiveYBand(yAssessment, bandThresholds);
-            const kpiValue = kpiDrafts[p.evalueeId] ?? (yAssessment?.kpiPercent ?? '');
-            return (
-              <tr key={p.evalueeId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <td style={tdStyle}>{p.evaluee.fio}</td>
-                <td style={{ ...tdStyle, color: 'var(--color-text-muted)' }}>
-                  {p.xBand ? TALENT_BAND_LABELS[p.xBand] : '—'}
-                </td>
-                <td style={tdStyle}>
-                  <select
-                    className="input"
-                    style={{ ...inputSm, width: '170px' }}
-                    value={yAssessment?.manualBand || ''}
-                    onChange={(e) => handleManualBandChange(p.evalueeId, e.target.value || null)}
-                  >
-                    <option value="">не задано</option>
-                    <option value={TALENT_BAND_BELOW}>{TALENT_BAND_LABELS[TALENT_BAND_BELOW]}</option>
-                    <option value={TALENT_BAND_MATCH}>{TALENT_BAND_LABELS[TALENT_BAND_MATCH]}</option>
-                    <option value={TALENT_BAND_EXCEEDS}>{TALENT_BAND_LABELS[TALENT_BAND_EXCEEDS]}</option>
-                  </select>
-                </td>
-                <td style={tdStyle}>
-                  <input
-                    className="input"
-                    type="number"
-                    style={{ ...inputSm, width: '100px' }}
-                    value={kpiValue}
-                    onChange={(e) => setKpiDrafts(prev => ({ ...prev, [p.evalueeId]: e.target.value }))}
-                    onBlur={() => commitKpi(p.evalueeId)}
-                  />
-                </td>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>
-                  {effectiveY ? TALENT_BAND_LABELS[effectiveY] : '—'}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+        <button className="btn btn-secondary btn-sm" onClick={handleClearAll} disabled={clearing}>
+          {clearing ? 'Очистка...' : 'Очистить ось Y у всех'}
+        </button>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
+              <th style={thStyle}>ФИО</th>
+              <th style={thStyle}>Полоса X</th>
+              <th style={thStyle}>Полоса Y (вручную)</th>
+              <th style={thStyle}>KPI, % плана</th>
+              <th style={thStyle}>Эффективная Y</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pairs.map(p => {
+              const yAssessment = yAxisAssessments?.[p.evalueeId] || null;
+              const effectiveY = computeEffectiveYBand(yAssessment, bandThresholds);
+              const kpiValue = kpiDrafts[p.evalueeId] ?? (yAssessment?.kpiPercent ?? '');
+              return (
+                <tr key={p.evalueeId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                  <td style={tdStyle}>{p.evaluee.fio}</td>
+                  <td style={{ ...tdStyle, color: 'var(--color-text-muted)' }}>
+                    {p.xBand ? TALENT_BAND_LABELS[p.xBand] : '—'}
+                  </td>
+                  <td style={tdStyle}>
+                    <select
+                      className="input"
+                      style={{ ...inputSm, width: '170px' }}
+                      value={yAssessment?.manualBand || ''}
+                      onChange={(e) => handleManualBandChange(p.evalueeId, e.target.value || null)}
+                    >
+                      <option value="">не задано</option>
+                      <option value={TALENT_BAND_BELOW}>{TALENT_BAND_LABELS[TALENT_BAND_BELOW]}</option>
+                      <option value={TALENT_BAND_MATCH}>{TALENT_BAND_LABELS[TALENT_BAND_MATCH]}</option>
+                      <option value={TALENT_BAND_EXCEEDS}>{TALENT_BAND_LABELS[TALENT_BAND_EXCEEDS]}</option>
+                    </select>
+                  </td>
+                  <td style={tdStyle}>
+                    <input
+                      className="input"
+                      type="number"
+                      style={{ ...inputSm, width: '100px' }}
+                      value={kpiValue}
+                      onChange={(e) => setKpiDrafts(prev => ({ ...prev, [p.evalueeId]: e.target.value }))}
+                      onBlur={() => commitKpi(p.evalueeId)}
+                    />
+                  </td>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>
+                    {effectiveY ? TALENT_BAND_LABELS[effectiveY] : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
